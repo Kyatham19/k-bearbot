@@ -29,6 +29,7 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.6.0",
+    "twilio": "^6.0.0",
     "xlsx": "^0.18.5",
     "yahoo-finance2": "^2.14.0",
     "zustand": "^5.0.2"
