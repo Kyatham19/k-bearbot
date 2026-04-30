@@ -260,14 +260,14 @@ async function generateBriefForUser(
   prompt += `Include relevant dates and timestamps in the analysis where appropriate for real-time context.\n\n`;
 
   prompt += `## Portfolio Data\n`;
-  prompt += `- Total Value: $${snapshot.totalValue.toFixed(2)}\n`;
-  prompt += `- Total P&L: $${snapshot.totalPnl.toFixed(2)} (${snapshot.totalPnlPercent.toFixed(2)}%)\n`;
+  prompt += `- Total Value: ₹${snapshot.totalValue.toFixed(2)}\n`;
+  prompt += `- Total P&L: ₹${snapshot.totalPnl.toFixed(2)} (${snapshot.totalPnlPercent.toFixed(2)}%)\n`;
   prompt += `- Number of Holdings: ${snapshot.holdings.length}\n\n`;
 
   if (topGainers.length > 0) {
     prompt += `## Top Gainers\n`;
     for (const g of topGainers) {
-      prompt += `- ${g.symbol}: Current $${g.currentPrice.toFixed(2)}, P&L ${g.pnlPercent >= 0 ? "+" : ""}${g.pnlPercent.toFixed(2)}%\n`;
+      prompt += `- ${g.symbol}: Current ₹${g.currentPrice.toFixed(2)}, P&L ${g.pnlPercent >= 0 ? "+" : ""}${g.pnlPercent.toFixed(2)}%\n`;
     }
     prompt += "\n";
   }

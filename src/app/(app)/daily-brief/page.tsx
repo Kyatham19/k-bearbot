@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw,
@@ -443,17 +443,70 @@ function CreateScheduleForm({
     is_active: true,
   });
   const [stockInput, setStockInput] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ symbol: string; name: string; exchange: string; type: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleAddStock = () => {
-    const symbol = stockInput.trim().toUpperCase();
-    if (symbol && !formData.stocks.includes(symbol)) {
+  // Debounced search function
+  const searchStocks = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSearchResults([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    try {
+      const response = await fetch(`/api/stock/search?q=${encodeURIComponent(query)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSearchResults(data.results || []);
+        setShowSuggestions(true);
+      } else {
+        setSearchResults([]);
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error('Stock search error:', error);
+      setSearchResults([]);
+      setShowSuggestions(false);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, []);
+
+  // Handle input changes with debouncing
+  const handleStockInputChange = useCallback((value: string) => {
+    setStockInput(value);
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Set new timeout for debounced search
+    searchTimeoutRef.current = setTimeout(() => {
+      searchStocks(value);
+    }, 300);
+  }, [searchStocks]);
+
+  const handleAddStock = (symbol?: string) => {
+    const stockSymbol = symbol || stockInput.trim().toUpperCase();
+    if (stockSymbol && !formData.stocks.includes(stockSymbol)) {
       setFormData(prev => ({
         ...prev,
-        stocks: [...prev.stocks, symbol]
+        stocks: [...prev.stocks, stockSymbol]
       }));
       setStockInput('');
+      setSearchResults([]);
+      setShowSuggestions(false);
     }
+  };
+
+  const handleSelectSuggestion = (suggestion: { symbol: string; name: string; exchange: string; type: string }) => {
+    handleAddStock(suggestion.symbol);
   };
 
   const handleRemoveStock = (symbol: string) => {
@@ -512,35 +565,97 @@ function CreateScheduleForm({
         </div>
       </div>
 
-      <div>
+      <div className="relative">
         <label className="block text-sm font-medium text-gray-100 mb-2">
           Stocks to Track
         </label>
         <div className="flex gap-2 mb-2">
-          <input
-            type="text"
-            value={stockInput}
-            onChange={(e) => setStockInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleAddStock()}
-            className="flex-1 px-3 py-2 bg-dark-800 border border-dark-700 rounded-md text-gray-100 placeholder-dark-500 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue"
-            placeholder="AAPL, TSLA, GOOGL..."
-          />
-          <Button onClick={handleAddStock} size="sm" variant="secondary">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              value={stockInput}
+              onChange={(e) => handleStockInputChange(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  if (showSuggestions && searchResults.length > 0) {
+                    handleSelectSuggestion(searchResults[0]);
+                  } else {
+                    handleAddStock();
+                  }
+                }
+              }}
+              onFocus={() => {
+                if (searchResults.length > 0) {
+                  setShowSuggestions(true);
+                }
+              }}
+              onBlur={() => {
+                // Delay hiding suggestions to allow click selection
+                setTimeout(() => setShowSuggestions(false), 200);
+              }}
+              className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-md text-gray-100 placeholder-dark-500 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue"
+              placeholder="Search for stocks (e.g., Apple, Tesla, Google)..."
+            />
+            {searchLoading && (
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin h-4 w-4 border-2 border-accent-blue border-t-transparent rounded-full"></div>
+              </div>
+            )}
+          </div>
+          <Button onClick={() => handleAddStock()} size="sm" variant="secondary">
             <Plus className="h-4 w-4" />
           </Button>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        {/* Autocomplete Suggestions */}
+        {showSuggestions && searchResults.length > 0 && (
+          <div className="absolute z-10 w-full mt-1 bg-dark-800 border border-dark-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+            {searchResults.map((result, index) => (
+              <div
+                key={`${result.symbol}-${index}`}
+                className="px-3 py-2 hover:bg-dark-700 cursor-pointer border-b border-dark-700/50 last:border-b-0"
+                onClick={() => handleSelectSuggestion(result)}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-100">{result.symbol}</span>
+                      <Badge variant="gray" className="text-xs">
+                        {result.exchange}
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-dark-400 truncate">
+                      {result.name}
+                    </div>
+                  </div>
+                  <Badge variant="blue" className="text-xs ml-2">
+                    {result.type}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Selected Stocks */}
+        <div className="flex flex-wrap gap-2 mt-3">
           {formData.stocks.map((stock) => (
             <Badge
               key={stock}
               variant="blue"
-              className="cursor-pointer"
+              className="cursor-pointer hover:bg-accent-blue/20"
               onClick={() => handleRemoveStock(stock)}
             >
               {stock} ×
             </Badge>
           ))}
         </div>
+
+        {formData.stocks.length === 0 && (
+          <p className="text-xs text-dark-400 mt-2">
+            Add stocks to track in your daily brief reports
+          </p>
+        )}
       </div>
 
       <div className="flex justify-end gap-3 pt-4 border-t border-dark-700">

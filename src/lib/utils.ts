@@ -5,8 +5,17 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(value: number, currency = 'USD'): string {
-  return new Intl.NumberFormat('en-US', {
+export function formatCurrency(value: number, currency = 'INR'): string {
+  // For Indian users, use INR with rupee symbol
+  if (currency === 'INR' || currency === 'USD') {
+    return `₹${value.toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  // Fallback for other currencies
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency,
     minimumFractionDigits: 2,
