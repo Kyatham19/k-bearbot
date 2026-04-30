@@ -5,8 +5,68 @@ import { fetchQuote } from "@/lib/stock/data";
 import { assessMacroRisks } from "@/lib/stock/macro";
 import { fetchStockNews } from "@/lib/stock/news";
 import { generateDailyBrief } from "@/lib/ai";
+import { generateExcelReport } from "@/lib/excel-generator";
+import { sendDailyBriefEmail } from "@/lib/email-sender";
 import type { PortfolioSnapshot, PortfolioSnapshotItem } from "@/types/stock";
+import type { ExcelStockData } from "@/lib/excel-generator";
 // Types
+
+// Note: Removed shouldSendBrief function as we now use UTC-based scheduling
+
+/**
+ * Generate Excel data for stocks
+ */
+async function generateStockExcelData(stocks: string[], aiInsights: string[]): Promise<ExcelStockData[]> {
+  const excelData: ExcelStockData[] = [];
+
+  for (let i = 0; i < stocks.length; i++) {
+    const symbol = stocks[i];
+    const aiInsight = aiInsights[i] || 'No insight available';
+
+    try {
+      const quote = await fetchQuote(symbol);
+      if (!quote) {
+        // Fallback data if quote fails
+        excelData.push({
+          Company: symbol,
+          'Open Price': 0,
+          'Close Price': 0,
+          'High': 0,
+          'Low': 0,
+          Trend: 'Bearish' as const,
+          'AI Insight': aiInsight
+        });
+        continue;
+      }
+
+      const trend = quote.price > quote.open ? 'Bullish' : 'Bearish';
+
+      excelData.push({
+        Company: quote.name || symbol,
+        'Open Price': quote.open,
+        'Close Price': quote.price,
+        'High': quote.dayHigh,
+        'Low': quote.dayLow,
+        Trend: trend as 'Bullish' | 'Bearish',
+        'AI Insight': aiInsight
+      });
+    } catch (error) {
+      console.error(`Failed to fetch data for ${symbol}:`, error);
+      // Still add with available data
+      excelData.push({
+        Company: symbol,
+        'Open Price': 0,
+        'Close Price': 0,
+        'High': 0,
+        'Low': 0,
+        Trend: 'Bearish' as const,
+        'AI Insight': aiInsight
+      });
+    }
+  }
+
+  return excelData;
+}
 
 /**
  * GET /api/daily-brief - Fetch the latest daily brief for the authenticated user.
@@ -261,63 +321,136 @@ export async function POST(request: NextRequest) {
       vercelCron || (cronSecret && cronSecret === process.env.CRON_SECRET);
 
     if (isCronJob) {
-      // Admin mode: generate briefs for all users with portfolios
+      // Admin mode: process scheduled reports
       const adminSupabase = createAdminClient();
 
-      // Get all distinct user IDs that have portfolio holdings
-      const { data: userHoldings, error: holdingsError } = await adminSupabase
-        .from("portfolio_holdings")
-        .select("user_id, symbol, quantity, avg_buy_price");
+      // Get all active scheduled reports
+      const { data: schedules, error: schedulesError } = await adminSupabase
+        .from("scheduled_reports")
+        .select("id, user_id, email, stocks, schedule_time, timezone, is_active")
+        .eq("is_active", true);
 
-      if (holdingsError || !userHoldings) {
+      if (schedulesError || !schedules) {
         return NextResponse.json(
-          { error: "Failed to fetch holdings" },
+          { error: "Failed to fetch scheduled reports" },
           { status: 500 }
         );
       }
 
-      // Group holdings by user
-      const userMap = new Map<
-        string,
-        Array<{ symbol: string; quantity: number; avg_buy_price: number }>
-      >();
-      for (const h of userHoldings) {
-        if (!userMap.has(h.user_id)) {
-          userMap.set(h.user_id, []);
-        }
-        userMap.get(h.user_id)!.push({
-          symbol: h.symbol,
-          quantity: h.quantity,
-          avg_buy_price: h.avg_buy_price,
-        });
-      }
-
-      let generated = 0;
+      let processed = 0;
+      let sent = 0;
       let failed = 0;
 
-      // Generate brief for each user
-      for (const [userId, holdings] of userMap.entries()) {
+      // Process each scheduled report
+      for (const schedule of schedules) {
         try {
-          const result = await generateBriefForUser(userId, holdings);
-          if (result) {
-            await adminSupabase.from("daily_briefs").insert({
-              user_id: userId,
-              content: result.content,
-              portfolio_snapshot: result.snapshot as unknown as Record<string, unknown>,
-            });
-            generated++;
+          // Since cron runs at 6 AM UTC daily, check if this user's schedule matches
+          // The schedule_time is in their local timezone, so we need to check if
+          // their scheduled time corresponds to approximately now (6 AM UTC)
+          const now = new Date();
+          const userTime = new Date(now.toLocaleString("en-US", { timeZone: schedule.timezone }));
+
+          // Extract scheduled hour and minute
+          const [scheduledHour, scheduledMinute] = schedule.schedule_time.split(':').map(Number);
+          const userScheduledTime = new Date(userTime);
+          userScheduledTime.setHours(scheduledHour, scheduledMinute, 0, 0);
+
+          // Check if current UTC time is within 30 minutes of when this user's schedule should run
+          const timeDiff = Math.abs(now.getTime() - userScheduledTime.getTime());
+          const thirtyMinutes = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+          if (timeDiff > thirtyMinutes) {
+            continue; // Not time for this user yet
           }
+
+          processed++;
+
+          // Generate AI insights for all stocks in one call
+          const stockSymbols = schedule.stocks;
+          let aiSummary = '';
+          let aiInsights: string[] = [];
+
+          try {
+            // Create a prompt for batch analysis
+            const prompt = `Generate a daily stock market summary and individual insights for these stocks: ${stockSymbols.join(', ')}.
+
+Provide:
+1. A short overall market summary (2-3 sentences)
+2. Individual insights for each stock (one sentence each)
+
+Format as:
+SUMMARY: [your summary]
+
+${stockSymbols.map((symbol: string, index: number) => `${symbol}: [insight for ${symbol}]`).join('\n')}`;
+
+            const aiResponse = await generateDailyBrief(prompt);
+            if (aiResponse) {
+              // Parse the AI response
+              const lines = aiResponse.split('\n');
+              const summaryLine = lines.find(line => line.startsWith('SUMMARY:'));
+              aiSummary = summaryLine ? summaryLine.replace('SUMMARY:', '').trim() : 'Market summary unavailable.';
+
+              // Extract individual insights
+              aiInsights = stockSymbols.map((symbol: string) => {
+                const insightLine = lines.find((line: string) => line.startsWith(`${symbol}:`));
+                return insightLine ? insightLine.replace(`${symbol}:`, '').trim() : `No specific insight for ${symbol}`;
+              });
+            } else {
+              aiSummary = 'AI summary generation failed.';
+              aiInsights = stockSymbols.map(() => 'AI insight unavailable');
+            }
+          } catch (aiError) {
+            console.error(`AI generation failed for user ${schedule.user_id}:`, aiError);
+            aiSummary = 'AI summary generation failed.';
+            aiInsights = stockSymbols.map(() => 'AI insight unavailable');
+          }
+
+          // Fetch market indices for context
+          const indices = ['^GSPC', '^IXIC', '^DJI'];
+          const marketIndices: Array<{ symbol: string; price: number; change: number; changePercent: number }> = [];
+          for (const symbol of indices) {
+            try {
+              const quote = await fetchQuote(symbol);
+              if (quote) {
+                marketIndices.push({
+                  symbol: quote.symbol === '^GSPC' ? 'S&P 500' : quote.symbol === '^IXIC' ? 'NASDAQ' : 'Dow Jones',
+                  price: quote.price,
+                  change: quote.change,
+                  changePercent: quote.changePercent,
+                });
+              }
+            } catch {
+              // Skip failed indices
+            }
+          }
+
+          // Generate Excel data
+          const excelData = await generateStockExcelData(stockSymbols, aiInsights);
+          const excelBuffer = generateExcelReport(excelData, `Daily Stock Report - ${new Date().toDateString()}`);
+
+          // Send email
+          const emailSent = await sendDailyBriefEmail(schedule.email, aiSummary, excelBuffer);
+
+          if (emailSent) {
+            sent++;
+            console.log(`Successfully sent daily brief to ${schedule.email} for ${stockSymbols.length} stocks`);
+          } else {
+            failed++;
+            console.error(`Failed to send email to ${schedule.email}`);
+          }
+
         } catch (err) {
-          console.error(`Failed to generate brief for user ${userId}:`, err);
+          console.error(`Failed to process scheduled report for user ${schedule.user_id}:`, err);
           failed++;
         }
       }
 
       return NextResponse.json({
         success: true,
-        generated,
+        processed,
+        sent,
         failed,
-        totalUsers: userMap.size,
+        totalSchedules: schedules.length,
       });
     } else {
       // User mode: generate brief for authenticated user

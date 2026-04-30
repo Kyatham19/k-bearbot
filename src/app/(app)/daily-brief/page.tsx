@@ -13,6 +13,11 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  Settings,
+  Clock,
+  Mail,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -27,6 +32,9 @@ export function DailyBriefView() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [expandedBriefId, setExpandedBriefId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [scheduledReports, setScheduledReports] = useState<any[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(false);
 
   const fetchBriefs = useCallback(async () => {
     try {
@@ -42,9 +50,27 @@ export function DailyBriefView() {
     }
   }, []);
 
+  const fetchScheduledReports = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scheduled-reports');
+      if (res.ok) {
+        const data = await res.json();
+        setScheduledReports(data.reports || []);
+      }
+    } catch {
+      // silently fail
+    }
+  }, []);
+
   useEffect(() => {
     fetchBriefs();
   }, [fetchBriefs]);
+
+  useEffect(() => {
+    if (showSettings) {
+      fetchScheduledReports();
+    }
+  }, [showSettings, fetchScheduledReports]);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -91,6 +117,40 @@ export function DailyBriefView() {
           >
             <RefreshCw className={cn('h-4 w-4', generating && 'animate-spin')} />
             Generate New Brief
+          </Button>
+        </div>
+
+        {/* Settings Panel */}
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{
+            opacity: showSettings ? 1 : 0,
+            height: showSettings ? 'auto' : 0
+          }}
+          transition={{ duration: 0.3 }}
+          className="overflow-hidden"
+        >
+          <div className="rounded-xl border border-dark-700 bg-dark-800 p-6 mb-6">
+            <DailyBriefSettings
+              reports={scheduledReports}
+              onReportsChange={setScheduledReports}
+              loading={settingsLoading}
+              setLoading={setSettingsLoading}
+            />
+          </div>
+        </motion.div>
+
+        {/* Toggle Settings Button */}
+        <div className="flex justify-center mb-6">
+          <Button
+            onClick={() => setShowSettings(!showSettings)}
+            variant="secondary"
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            <Settings className="h-4 w-4" />
+            {showSettings ? 'Hide' : 'Show'} Daily Brief Settings
+            {showSettings ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
         </div>
 
@@ -237,6 +297,264 @@ export function DailyBriefView() {
             )}
           </motion.div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function DailyBriefSettings({
+  reports,
+  onReportsChange,
+  loading,
+  setLoading
+}: {
+  reports: any[];
+  onReportsChange: (reports: any[]) => void;
+  loading: boolean;
+  setLoading: (loading: boolean) => void;
+}) {
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this scheduled report?')) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/scheduled-reports/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        onReportsChange(reports.filter(r => r.id !== id));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-accent-blue" />
+            Automated Daily Briefs
+          </h2>
+          <p className="text-sm text-dark-400 mt-1">
+            Set up automatic email delivery of your stock reports
+          </p>
+        </div>
+        <Button
+          onClick={() => setShowCreateForm(!showCreateForm)}
+          size="sm"
+          className="flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Add Schedule
+        </Button>
+      </div>
+
+      {/* Create Form */}
+      <AnimatePresence>
+        {showCreateForm && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <CreateScheduleForm
+              onSuccess={(newReport) => {
+                onReportsChange([...reports, newReport]);
+                setShowCreateForm(false);
+              }}
+              onCancel={() => setShowCreateForm(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Existing Reports */}
+      <div className="space-y-3">
+        {reports.length === 0 ? (
+          <div className="text-center py-8 text-dark-400">
+            <Mail className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No scheduled reports yet</p>
+            <p className="text-sm">Create your first automated brief above</p>
+          </div>
+        ) : (
+          reports.map((report) => (
+            <div
+              key={report.id}
+              className="flex items-center justify-between p-4 rounded-lg border border-dark-700 bg-dark-850"
+            >
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-accent-blue" />
+                  <span className="text-sm font-medium text-gray-100">
+                    {report.schedule_time}
+                  </span>
+                  <span className="text-xs text-dark-400">
+                    ({report.timezone})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-dark-400" />
+                  <span className="text-sm text-gray-300">{report.email}</span>
+                </div>
+                <Badge variant={report.is_active ? 'green' : 'gray'}>
+                  {report.is_active ? 'Active' : 'Inactive'}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-dark-400">
+                  {report.stocks.length} stocks
+                </span>
+                <Button
+                  onClick={() => handleDelete(report.id)}
+                  variant="ghost"
+                  size="sm"
+                  disabled={loading}
+                  className="text-accent-red hover:text-accent-red hover:bg-accent-red/10"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CreateScheduleForm({
+  onSuccess,
+  onCancel
+}: {
+  onSuccess: (report: any) => void;
+  onCancel: () => void;
+}) {
+  const [formData, setFormData] = useState({
+    email: '',
+    stocks: [] as string[],
+    schedule_time: '07:00',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    is_active: true,
+  });
+  const [stockInput, setStockInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleAddStock = () => {
+    const symbol = stockInput.trim().toUpperCase();
+    if (symbol && !formData.stocks.includes(symbol)) {
+      setFormData(prev => ({
+        ...prev,
+        stocks: [...prev.stocks, symbol]
+      }));
+      setStockInput('');
+    }
+  };
+
+  const handleRemoveStock = (symbol: string) => {
+    setFormData(prev => ({
+      ...prev,
+      stocks: prev.stocks.filter(s => s !== symbol)
+    }));
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.email || formData.stocks.length === 0) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/scheduled-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onSuccess(data.report);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="border border-dark-700 rounded-lg p-4 bg-dark-850 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-100 mb-2">
+            Email Address
+          </label>
+          <input
+            type="email"
+            value={formData.email}
+            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
+            className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-md text-gray-100 placeholder-dark-500 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue"
+            placeholder="your@email.com"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-100 mb-2">
+            Schedule Time (HH:MM)
+          </label>
+          <input
+            type="time"
+            value={formData.schedule_time}
+            onChange={(e) => setFormData(prev => ({ ...prev, schedule_time: e.target.value }))}
+            className="w-full px-3 py-2 bg-dark-800 border border-dark-700 rounded-md text-gray-100 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-100 mb-2">
+          Stocks to Track
+        </label>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="text"
+            value={stockInput}
+            onChange={(e) => setStockInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleAddStock()}
+            className="flex-1 px-3 py-2 bg-dark-800 border border-dark-700 rounded-md text-gray-100 placeholder-dark-500 focus:border-accent-blue focus:ring-1 focus:ring-accent-blue"
+            placeholder="AAPL, TSLA, GOOGL..."
+          />
+          <Button onClick={handleAddStock} size="sm" variant="secondary">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {formData.stocks.map((stock) => (
+            <Badge
+              key={stock}
+              variant="blue"
+              className="cursor-pointer"
+              onClick={() => handleRemoveStock(stock)}
+            >
+              {stock} ×
+            </Badge>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-4 border-t border-dark-700">
+        <Button onClick={onCancel} variant="ghost" size="sm">
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          loading={submitting}
+          disabled={!formData.email || formData.stocks.length === 0}
+          size="sm"
+        >
+          Create Schedule
+        </Button>
       </div>
     </div>
   );

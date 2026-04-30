@@ -7,6 +7,7 @@ const variantStyles = {
   green: 'bg-accent-green/15 text-accent-green border-accent-green/30',
   red: 'bg-accent-red/15 text-accent-red border-accent-red/30',
   amber: 'bg-accent-amber/15 text-accent-amber border-accent-amber/30',
+  blue: 'bg-accent-blue/15 text-accent-blue border-accent-blue/30',
   gray: 'bg-dark-700/50 text-dark-400 border-dark-700',
 };
 

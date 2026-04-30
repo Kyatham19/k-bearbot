@@ -149,6 +149,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      scheduled_reports: {
+        Row: {
+          id: string;
+          user_id: string;
+          email: string;
+          stocks: string[];
+          schedule_time: string;
+          timezone: string;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          email: string;
+          stocks: string[];
+          schedule_time: string;
+          timezone: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          email?: string;
+          stocks?: string[];
+          schedule_time?: string;
+          timezone?: string;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       user_preferences: {
         Row: {
           id: string;
@@ -174,6 +207,39 @@ export type Database = {
         Relationships: [];
       };
     };
+      scheduled_reports: {
+        Row: {
+          id: string;
+          user_id: string;
+          email: string | null;
+          stocks: string[] | null;
+          schedule_time: string | null;
+          timezone: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          email?: string | null;
+          stocks?: string[] | null;
+          schedule_time?: string | null;
+          timezone?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          email?: string | null;
+          stocks?: string[] | null;
+          schedule_time?: string | null;
+          timezone?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     Views: {
       [_ in never]: never;
     };
@@ -228,3 +294,10 @@ export type UserPreferencesInsert =
   Database["public"]["Tables"]["user_preferences"]["Insert"];
 export type UserPreferencesUpdate =
   Database["public"]["Tables"]["user_preferences"]["Update"];
+
+export type ScheduledReport =
+  Database["public"]["Tables"]["scheduled_reports"]["Row"];
+export type ScheduledReportInsert =
+  Database["public"]["Tables"]["scheduled_reports"]["Insert"];
+export type ScheduledReportUpdate =
+  Database["public"]["Tables"]["scheduled_reports"]["Update"];
