@@ -1,6 +1,5 @@
 import { updateSession } from "@/lib/supabase/middleware";
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient, type SetAllCookies } from "@supabase/ssr";
 
 const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/api/daily-brief"];
 
@@ -14,11 +13,17 @@ export async function middleware(request: NextRequest) {
     response = await updateSession(request);
   } catch (error) {
     console.error("[middleware] session refresh failed", error);
-    // Never block API routes at middleware layer; API handlers enforce auth.
-    if (isApiPath) {
-      return NextResponse.next({ request });
+    // If it's an auth error (like invalid refresh token), get a fresh response
+    // that has the cookies cleared by updateSession
+    if (error instanceof Error && error.message.includes('Refresh Token Not Found')) {
+      response = await updateSession(request);
+    } else {
+      // Never block API routes at middleware layer; API handlers enforce auth.
+      if (isApiPath) {
+        return NextResponse.next({ request });
+      }
+      response = NextResponse.next({ request });
     }
-    response = NextResponse.next({ request });
   }
 
   // API routes should not be redirected by middleware.
