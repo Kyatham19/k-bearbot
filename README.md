@@ -190,6 +190,7 @@ The UI is configured for **text-first outputs** (no forced chart/news card clutt
 
 - Designed for Vercel-compatible Next.js deployment.
 - Optional scheduled brief generation can run via cron hitting `/api/daily-brief`.
+- The Supabase client and middleware now include placeholder fallbacks (https://placeholder.supabase.co and a placeholder anon key) when NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY are missing to prevent runtime crashes during local development. Ensure proper Supabase URLs and keys are configured in production.
 - Ensure env vars are set in deployment environment before first run.
 
 ---
