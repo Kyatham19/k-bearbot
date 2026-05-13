@@ -1,7 +1,8 @@
 import Groq from 'groq-sdk';
 import { textToStream } from './mistral'; // Reuse the stream converter
+import { AGENT_CONFIG } from './config';
 
-const GROQ_MODEL = "llama-3.1-8b-instant"; // Use this model
+const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.1-8b-instant";
 
 function readGroqApiKey(): string {
   return process.env.GROQ_API_KEY || "";
@@ -41,8 +42,8 @@ export async function generateGroqResponse(
   const completion = await groq.chat.completions.create({
     model: GROQ_MODEL,
     messages,
-    temperature: context.temperature || 0.7,
-    max_tokens: context.maxTokens || 2048,
+    temperature: context.temperature ?? AGENT_CONFIG.general.temp,
+    max_tokens: context.maxTokens ?? AGENT_CONFIG.general.maxTokens,
   });
 
   return completion.choices[0]?.message?.content || "";
@@ -61,8 +62,8 @@ export async function streamGeneralChat(
   const context = {
     systemPrompt: userMemory ? `${systemPrompt}\n\nUser context: ${userMemory}` : systemPrompt,
     history,
-    temperature: 0.7,
-    maxTokens: kind === "brief" ? 512 : 2048,
+    temperature: kind === "brief" ? AGENT_CONFIG.general.briefTemp : AGENT_CONFIG.general.temp,
+    maxTokens: kind === "brief" ? AGENT_CONFIG.general.briefMaxTokens : AGENT_CONFIG.general.maxTokens,
   };
 
   const text = await generateGroqResponse(message, context);
@@ -81,8 +82,8 @@ export async function streamStockAnalysis(
   const context = {
     systemPrompt: userMemory ? `${systemPrompt}\n\nUser context: ${userMemory}` : systemPrompt,
     history,
-    temperature: 0.6,
-    maxTokens: 4096,
+    temperature: AGENT_CONFIG.stock.temp,
+    maxTokens: AGENT_CONFIG.stock.maxTokens,
   };
 
   const text = await generateGroqResponse(message, context);
@@ -99,8 +100,8 @@ export function friendlyGroqError(error: any): string {
 export async function generateDailyBrief(prompt: string): Promise<string> {
   const context = {
     systemPrompt: "Generate a concise daily portfolio brief in markdown format.",
-    temperature: 0.6,
-    maxTokens: 1500,
+    temperature: AGENT_CONFIG.brief.temp,
+    maxTokens: AGENT_CONFIG.brief.maxTokens,
   };
 
   return await generateGroqResponse(prompt, context);

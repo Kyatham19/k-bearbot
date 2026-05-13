@@ -1,4 +1,5 @@
 import { STOCK_ANALYSIS_SYSTEM_PROMPT, GENERAL_CHAT_PROMPT, DAILY_BRIEF_PROMPT } from "./prompts";
+import { AGENT_CONFIG } from "./config";
 import type { StockAnalysis } from "@/types/stock";
 
 const STOCK_ANALYSIS_MODEL = "mistral-large-latest";
@@ -346,8 +347,8 @@ export async function generateResponse(
   const payload = {
     model: context.model ?? GENERAL_CHAT_MODEL,
     messages: buildMessages(context.systemPrompt, prompt, context.history ?? []),
-    temperature: context.temperature ?? 0.6,
-    max_tokens: context.maxTokens ?? 900,
+    temperature: context.temperature ?? AGENT_CONFIG.general.temp,
+    max_tokens: context.maxTokens ?? AGENT_CONFIG.general.maxTokens,
     stream: Boolean(context.stream),
   };
 
@@ -379,10 +380,10 @@ export async function streamStockAnalysis(
     systemPrompt,
     history: conversationHistory,
     model: STOCK_ANALYSIS_MODEL,
-    stream: true,
-    temperature: 0.6,
-    maxTokens: 8192,
-    timeoutMs: 120_000,
+    stream: AGENT_CONFIG.stock.streaming,
+    temperature: AGENT_CONFIG.stock.temp,
+    maxTokens: AGENT_CONFIG.stock.maxTokens,
+    timeoutMs: AGENT_CONFIG.stock.timeoutMs,
   });
   return typeof stream === "string" ? textToStream(stream) : stream;
 }
@@ -401,10 +402,10 @@ export async function streamGeneralChat(
     systemPrompt,
     history: conversationHistory,
     model: GENERAL_CHAT_MODEL,
-    stream: true,
-    temperature: kind === "brief" ? 0.8 : 0.6,
-    maxTokens: kind === "brief" ? 140 : 8192,
-    timeoutMs: 120_000,
+    stream: AGENT_CONFIG.general.streaming,
+    temperature: kind === "brief" ? AGENT_CONFIG.general.briefTemp : AGENT_CONFIG.general.temp,
+    maxTokens: kind === "brief" ? AGENT_CONFIG.general.briefMaxTokens : AGENT_CONFIG.general.maxTokens,
+    timeoutMs: AGENT_CONFIG.general.timeoutMs,
   });
   return typeof stream === "string" ? textToStream(stream) : stream;
 }
@@ -415,9 +416,9 @@ export async function generateDailyBrief(prompt: string): Promise<string> {
       systemPrompt: DAILY_BRIEF_PROMPT,
       model: DAILY_BRIEF_MODEL,
       stream: false,
-      temperature: 0.6,
-      maxTokens: 3000,
-      timeoutMs: 90_000,
+      temperature: AGENT_CONFIG.brief.temp,
+      maxTokens: AGENT_CONFIG.brief.maxTokens,
+      timeoutMs: AGENT_CONFIG.brief.timeoutMs,
     });
     return typeof result === "string" ? result : "";
   } catch (error) {

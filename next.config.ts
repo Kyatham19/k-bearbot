@@ -6,10 +6,6 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '2mb',
     },
   },
-  // Suppress the middleware deprecation warning as we're using the correct middleware.ts approach
-  eslint: {
-    ignoreDuringBuilds: ['next/core-web-vitals'],
-  },
   turbopack: {
     resolveAlias: {
       '@std/testing/mock': './src/lib/shims/empty-module.ts',

@@ -6,6 +6,9 @@ import Image from 'next/image';
 import { ThumbsUp, ThumbsDown, Share, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MarkdownRenderer } from './markdown-renderer';
+import { StockCard } from './stock-card';
+import { ChartWidget } from './chart-widget';
+import { usePrefs } from '@/lib/hooks/use-prefs';
 import type { ChatMessage as ChatMessageType } from '@/stores/app-store';
 
 interface ChatMessageProps {
@@ -64,6 +67,7 @@ function StreamingDots() {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const [feedback, setFeedback] = useState<'good' | 'poor' | null>(null);
+  const prefs = usePrefs();
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming;
   const normalizedContent = useMemo(
@@ -133,6 +137,18 @@ export function ChatMessage({ message }: ChatMessageProps) {
         <div className="mx-auto flex max-w-3xl gap-3">
           <AssistantMark />
           <div className="min-w-0 flex-1">
+            {/* Stock card (top of message) */}
+            {!isStreaming && prefs.show_charts && message.stockData && message.stockData[0] && (
+              <>
+                <StockCard stock={message.stockData[0]} />
+                <ChartWidget
+                  symbol={message.stockData[0].symbol}
+                  exchange={message.stockData[0].exchange}
+                  height={360}
+                />
+              </>
+            )}
+
             {/* Body */}
             {hasStreamingText && (
               <MarkdownRenderer content={normalizedContent} streaming={isStreaming} />
@@ -141,6 +157,33 @@ export function ChatMessage({ message }: ChatMessageProps) {
             {!hasContent && !isStreaming && (
               <div className="text-[15px] leading-7 text-gray-400 dark:text-gray-400 italic">
                 {EMPTY_RESPONSE_FALLBACK}
+              </div>
+            )}
+
+            {/* News cards */}
+            {!isStreaming && prefs.show_news_cards && message.newsData && message.newsData.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <div className="text-xs uppercase tracking-wide text-dark-500">Recent News</div>
+                {message.newsData.slice(0, 4).map((n, i) => (
+                  <a
+                    key={i}
+                    href={n.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-lg border border-dark-700 bg-dark-900 px-3 py-2 transition-colors hover:border-dark-600 hover:bg-dark-850"
+                  >
+                    <div className="line-clamp-2 text-sm text-gray-200">{n.title}</div>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-dark-500">
+                      <span>{n.source}</span>
+                      {n.publishedAt && (
+                        <>
+                          <span>·</span>
+                          <span>{new Date(n.publishedAt).toLocaleDateString()}</span>
+                        </>
+                      )}
+                    </div>
+                  </a>
+                ))}
               </div>
             )}
 

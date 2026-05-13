@@ -511,7 +511,7 @@ ${stockSymbols.map((symbol: string, index: number) => `${symbol}: [insight for $
         );
       }
 
-      return NextResponse.json({ brief }, { status: 201 });
+      return NextResponse.json({ brief, mode: "on-demand" }, { status: 201 });
     }
   } catch (error) {
     console.error("POST /api/daily-brief error:", error);

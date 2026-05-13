@@ -3,6 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { classifyIntent, streamChat, validateAiSetup } from "@/lib/ai";
 import { searchWeb, validateSerpApiSetup } from "@/lib/ai/web-search";
 import { buildUserContext } from "@/lib/ai/user-context";
+import { detectTanglish } from "@/lib/ai/lang-detect";
+import {
+  LANG_INSTRUCTION_TANGLISH,
+  LANG_INSTRUCTION_ENGLISH,
+} from "@/lib/ai/prompts";
+import { runDeepResearch, formatResearchBundle } from "@/lib/ai/deep-research";
 import { resolveSymbol } from "@/lib/stock/symbols";
 import { fetchQuote, fetchHistory, fetchCompanyInfo } from "@/lib/stock/data";
 import { fetchStockNews } from "@/lib/stock/news";
@@ -281,7 +287,7 @@ export async function POST(request: NextRequest) {
       if (error) console.error("[chat-api] Save name error:", error);
     }
 
-    const [historyResponse, userMemoryBase] = await Promise.all([
+    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
       supabase
         .from("messages")
         .select("role, content")
@@ -292,9 +298,28 @@ export async function POST(request: NextRequest) {
         console.warn("[chat-api] buildUserContext failed", err);
         return "";
       }),
+      supabase
+        .from("user_preferences")
+        .select("language_mode")
+        .eq("user_id", user.id)
+        .maybeSingle(),
     ]);
 
-    let userMemory = userMemoryBase;
+    const languageMode: "auto" | "english" | "tanglish" =
+      (prefsResponse.data?.language_mode as "auto" | "english" | "tanglish") ?? "auto";
+
+    let useTanglish = false;
+    if (languageMode === "tanglish") useTanglish = true;
+    else if (languageMode === "english") useTanglish = false;
+    else useTanglish = detectTanglish(incomingMessage);
+
+    const languageInstruction = useTanglish
+      ? LANG_INSTRUCTION_TANGLISH
+      : LANG_INSTRUCTION_ENGLISH;
+
+    let userMemory = userMemoryBase
+      ? `${userMemoryBase}\n\n${languageInstruction}`
+      : languageInstruction;
 
     const historyRows = historyResponse.data;
     const conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = (
@@ -466,6 +491,23 @@ export async function POST(request: NextRequest) {
     }
 
     userMemory += webSearchResults ? `\n\nWeb Search Results:\n${webSearchResults}` : "";
+
+    // Deep research pass for full stock analyses (skipped for simple price-only queries)
+    if (chatMode === "stock" && stockAnalysis && stockAnalysis.history.length > 0) {
+      try {
+        const research = await withTimeout(runDeepResearch(stockAnalysis), 8000, "deepResearch");
+        userMemory += `\n\n${formatResearchBundle(research)}`;
+        console.debug("[chat-api] deep research attached", {
+          companyNews: research.companyNews.length,
+          sectorNews: research.sectorNews.length,
+          commodityNews: research.commodityNews.length,
+          geoNews: research.geoNews.length,
+          peers: research.peers.length,
+        });
+      } catch (err) {
+        console.warn("[chat-api] deep research failed (skipping):", err);
+      }
+    }
 
     const conversationId = activeConversationId as string;
 

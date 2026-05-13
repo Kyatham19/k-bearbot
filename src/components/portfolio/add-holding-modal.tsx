@@ -164,10 +164,15 @@ function AddHoldingModal({
         throw new Error(data.error || 'Failed to save holding');
       }
 
+      const { toast } = await import('sonner');
+      toast.success(isEditing ? 'Holding updated' : 'Holding added');
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      const msg = err instanceof Error ? err.message : 'Something went wrong';
+      setError(msg);
+      const { toast } = await import('sonner');
+      toast.error(msg);
     } finally {
       setSaving(false);
     }

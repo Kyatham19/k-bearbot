@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_PORTFOLIO_ITEMS = 8;
 const MAX_WATCHLIST_ITEMS = 10;
-const MAX_MEMORY_CHARS = 500;
+const MAX_MEMORY_CHARS = 1200;
 
 type PortfolioRow = {
   symbol: string;

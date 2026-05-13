@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { toast } from 'sonner';
 import { cn, formatCurrency, formatPercent, getChangeColor } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -74,13 +75,18 @@ export function DailyBriefView() {
 
   async function handleGenerate() {
     setGenerating(true);
+    toast.info('Generating your brief...');
     try {
       const res = await fetch('/api/daily-brief', { method: 'POST' });
       if (res.ok) {
+        toast.success('Brief ready');
         await fetchBriefs();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? 'Failed to generate brief');
       }
     } catch {
-      // silently fail
+      toast.error('Network error');
     } finally {
       setGenerating(false);
     }

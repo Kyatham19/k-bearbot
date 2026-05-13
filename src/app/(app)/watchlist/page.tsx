@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Star, Plus, TrendingUp, TrendingDown, X } from 'lucide-react';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -156,10 +157,14 @@ export default function WatchlistPage() {
         setStockInput('');
         setSearchResults([]);
         setShowSuggestions(false);
-        fetchWatchlist(); // Refresh the watchlist
+        toast.success(`${symbol.toUpperCase()} added to watchlist`);
+        fetchWatchlist();
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.error ?? 'Failed to add');
       }
-    } catch (error) {
-      console.error('Failed to add to watchlist:', error);
+    } catch {
+      toast.error('Network error');
     } finally {
       setAddingStock(false);
     }
@@ -167,15 +172,19 @@ export default function WatchlistPage() {
 
   const handleRemoveFromWatchlist = async (id: string) => {
     try {
-      const response = await fetch(`/api/watchlist/${id}`, {
+      const response = await fetch(`/api/watchlist?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
 
       if (response.ok) {
-        fetchWatchlist(); // Refresh the watchlist
+        toast.success('Removed from watchlist');
+        fetchWatchlist();
+      } else {
+        const err = await response.json().catch(() => ({}));
+        toast.error(err.error ?? 'Failed to remove');
       }
-    } catch (error) {
-      console.error('Failed to remove from watchlist:', error);
+    } catch {
+      toast.error('Network error');
     }
   };
 

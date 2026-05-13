@@ -1,5 +1,10 @@
 import { updateSession } from "@/lib/supabase/middleware";
 import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
+
+type SetAllCookies = (
+  cookies: Array<{ name: string; value: string; options?: CookieOptions }>
+) => void;
 
 const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/api/daily-brief"];
 
@@ -35,8 +40,8 @@ export async function middleware(request: NextRequest) {
   // Build a lightweight Supabase client from the *response* cookies
   // so we read the freshly-refreshed tokens.
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key",
     {
       cookies: {
         getAll() {

@@ -108,6 +108,22 @@ create table user_preferences (
 create index idx_user_preferences_user_id on user_preferences(user_id);
 
 -- =====================================================================
+-- Data API exposure (required after May 30, 2026 for new projects)
+-- =====================================================================
+grant select, insert, update, delete on public.conversations       to authenticated;
+grant select, insert, update, delete on public.conversations       to service_role;
+grant select, insert, update, delete on public.messages            to authenticated;
+grant select, insert, update, delete on public.messages            to service_role;
+grant select, insert, update, delete on public.portfolio_holdings  to authenticated;
+grant select, insert, update, delete on public.portfolio_holdings  to service_role;
+grant select, insert, update, delete on public.watchlist           to authenticated;
+grant select, insert, update, delete on public.watchlist           to service_role;
+grant select, insert, update, delete on public.daily_briefs        to authenticated;
+grant select, insert, update, delete on public.daily_briefs        to service_role;
+grant select, insert, update, delete on public.user_preferences    to authenticated;
+grant select, insert, update, delete on public.user_preferences    to service_role;
+
+-- =====================================================================
 -- Row-Level Security
 -- =====================================================================
 

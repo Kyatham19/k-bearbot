@@ -13,6 +13,10 @@ create table scheduled_reports (
 
 create index idx_scheduled_reports_user_id on scheduled_reports(user_id);
 
+-- Data API exposure (required after May 30 for new projects, Oct 30 for existing)
+grant select, insert, update, delete on public.scheduled_reports to authenticated;
+grant select, insert, update, delete on public.scheduled_reports to service_role;
+
 alter table scheduled_reports enable row level security;
 
 create policy "Users can view their own scheduled reports"

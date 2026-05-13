@@ -188,58 +188,73 @@ export type Database = {
           user_id: string;
           default_market: "US" | "IN";
           theme: string;
+          language_mode: "auto" | "english" | "tanglish";
+          show_charts: boolean;
+          show_news_cards: boolean;
+          notif_brief_email: boolean;
+          notif_in_app: boolean;
+          daily_brief_time: string;
+          daily_brief_tz: string;
           created_at: string;
+          updated_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
           default_market?: "US" | "IN";
           theme?: string;
+          language_mode?: "auto" | "english" | "tanglish";
+          show_charts?: boolean;
+          show_news_cards?: boolean;
+          notif_brief_email?: boolean;
+          notif_in_app?: boolean;
+          daily_brief_time?: string;
+          daily_brief_tz?: string;
           created_at?: string;
+          updated_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
           default_market?: "US" | "IN";
           theme?: string;
+          language_mode?: "auto" | "english" | "tanglish";
+          show_charts?: boolean;
+          show_news_cards?: boolean;
+          notif_brief_email?: boolean;
+          notif_in_app?: boolean;
+          daily_brief_time?: string;
+          daily_brief_tz?: string;
           created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      user_memory: {
+        Row: {
+          id: string;
+          user_id: string;
+          key: string;
+          value: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          key: string;
+          value: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          key?: string;
+          value?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
     };
-      scheduled_reports: {
-        Row: {
-          id: string;
-          user_id: string;
-          email: string | null;
-          stocks: string[] | null;
-          schedule_time: string | null;
-          timezone: string | null;
-          is_active: boolean;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          email?: string | null;
-          stocks?: string[] | null;
-          schedule_time?: string | null;
-          timezone?: string | null;
-          is_active?: boolean;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          email?: string | null;
-          stocks?: string[] | null;
-          schedule_time?: string | null;
-          timezone?: string | null;
-          is_active?: boolean;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
     Views: {
       [_ in never]: never;
     };
