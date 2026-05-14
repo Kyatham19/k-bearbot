@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
     };
     const incomingMessage = body.message?.trim() ?? "";
     const requestedConversationId = body.conversationId ?? null;
-    const requestedModel: "mistral" = "mistral";
+    const requestedModel: "mistral" = body.model ?? "mistral";
 
     if (!incomingMessage) {
       return chatJsonResponse("Please enter a message.", 400, {
@@ -292,8 +292,8 @@ export async function POST(request: NextRequest) {
         .from("messages")
         .select("role, content")
         .eq("conversation_id", activeConversationId)
-        .order("created_at", { ascending: true })
-        .limit(6),
+        .order("created_at", { ascending: false })
+        .limit(12),
       buildUserContext(supabase, user.id).catch((err) => {
         console.warn("[chat-api] buildUserContext failed", err);
         return "";
@@ -328,6 +328,7 @@ export async function POST(request: NextRequest) {
       .filter((m): m is { role: "user" | "assistant"; content: string } =>
         m.role === "user" || m.role === "assistant"
       )
+      .reverse()
       .map((m) => ({ role: m.role, content: m.content ?? "" }));
 
     let stockAnalysis: StockAnalysis | null = null;

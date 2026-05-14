@@ -149,6 +149,7 @@ function parseNonStreamingText(data: unknown): string {
   if (!data || typeof data !== "object") return "";
   const choices = (data as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = choices?.[0]?.message?.content;
+  if (!content) return "";
   if (typeof content === "string") return content;
   return parseMistralDeltaText(content);
 }
@@ -193,7 +194,14 @@ async function openStreamingResponse(response: Response): Promise<ReadableStream
       try {
         while (true) {
           const { value, done } = await reader.read();
-          if (done) break;
+          if (done) {
+            // Process any remaining content in the buffer as a final event
+            if (buffer.trim().length > 0) {
+              processBuffer(buffer, controller, encoder);
+            }
+            break;
+          }
+
           buffer += decoder.decode(value, { stream: true });
           buffer = buffer.replace(/\r\n/g, "\n");
 
@@ -201,50 +209,8 @@ async function openStreamingResponse(response: Response): Promise<ReadableStream
           while (eventEnd !== -1) {
             const rawEvent = buffer.slice(0, eventEnd);
             buffer = buffer.slice(eventEnd + 2);
-
-            for (const line of rawEvent.split("\n")) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith("data:")) continue;
-              const payload = trimmed.slice(5).trim();
-              if (!payload || payload === "[DONE]") continue;
-
-              try {
-                const parsed = JSON.parse(payload) as {
-                  choices?: Array<{ delta?: { content?: unknown } }>;
-                };
-                const delta = parsed.choices?.[0]?.delta?.content;
-                const text = parseMistralDeltaText(delta);
-                if (text.length > 0) {
-                  controller.enqueue(encoder.encode(text));
-                }
-              } catch {
-                // Keep stream alive on malformed keepalive chunks.
-              }
-            }
-
+            processBuffer(rawEvent, controller, encoder);
             eventEnd = buffer.indexOf("\n\n");
-          }
-        }
-
-        // Process any trailing event block that may not end with double newline.
-        if (buffer.trim().length > 0) {
-          for (const line of buffer.split("\n")) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data:")) continue;
-            const payload = trimmed.slice(5).trim();
-            if (!payload || payload === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(payload) as {
-                choices?: Array<{ delta?: { content?: unknown } }>;
-              };
-              const delta = parsed.choices?.[0]?.delta?.content;
-              const text = parseMistralDeltaText(delta);
-              if (text.length > 0) {
-                controller.enqueue(encoder.encode(text));
-              }
-            } catch {
-              // ignore malformed trailing payload
-            }
           }
         }
       } catch (error) {
@@ -259,11 +225,39 @@ async function openStreamingResponse(response: Response): Promise<ReadableStream
   });
 }
 
+function processBuffer(
+  rawEvent: string,
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder
+) {
+  for (const line of rawEvent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+
+    try {
+      const parsed = JSON.parse(payload) as {
+        choices?: Array<{ delta?: { content?: unknown } }>;
+      };
+      const delta = parsed.choices?.[0]?.delta?.content;
+      const text = parseMistralDeltaText(delta);
+      if (text.length > 0) {
+        controller.enqueue(encoder.encode(text));
+      }
+    } catch {
+      // Keep stream alive on malformed chunks.
+    }
+  }
+}
+
 function formatLargeNumber(value: number): string {
-  if (value >= 1e12) return (value / 1e12).toFixed(2) + "T";
-  if (value >= 1e9) return (value / 1e9).toFixed(2) + "B";
-  if (value >= 1e6) return (value / 1e6).toFixed(2) + "M";
-  if (value >= 1e3) return (value / 1e3).toFixed(2) + "K";
+  const absValue = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (absValue >= 1e12) return sign + (absValue / 1e12).toFixed(2) + "T";
+  if (absValue >= 1e9) return sign + (absValue / 1e9).toFixed(2) + "B";
+  if (absValue >= 1e6) return sign + (absValue / 1e6).toFixed(2) + "M";
+  if (absValue >= 1e3) return sign + (absValue / 1e3).toFixed(2) + "K";
   return value.toString();
 }
 
