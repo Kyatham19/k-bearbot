@@ -6,6 +6,7 @@ import { Menu, LogOut, User, ArrowLeft } from 'lucide-react';
 import Image from 'next/image';
 import { useAppStore } from '@/stores/app-store';
 import { createClient } from '@/lib/supabase/client';
+import { logger } from '@/lib/logger';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from '@/components/ui/theme-switch-button';
 import { PWAInstallButton } from '@/components/ui/pwa-install-button';
@@ -53,10 +54,14 @@ export function Header() {
 
   const handleSignOut = useCallback(async () => {
     setMenuOpen(false);
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.replace('/login');
-    router.refresh();
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.replace('/login');
+      router.refresh();
+    } catch (error) {
+      logger.error('Sign out failed', error);
+    }
   }, [router]);
 
   const handleBack = useCallback(() => {
@@ -76,6 +81,7 @@ export function Header() {
           onClick={toggleSidebar}
           className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-850 dark:hover:text-gray-100"
           aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          title="Toggle sidebar (Cmd/Ctrl+B)"
         >
           <Menu size={17} />
         </button>
@@ -84,6 +90,7 @@ export function Header() {
             onClick={handleBack}
             className="rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-850 dark:hover:text-gray-100"
             aria-label="Go back"
+            title="Go back (Alt+←)"
           >
             <ArrowLeft size={17} />
           </button>
@@ -118,13 +125,19 @@ export function Header() {
               'ring-1 ring-accent-brand/50 ring-offset-2 ring-offset-dark-900',
               'transition-transform hover:scale-105',
             )}
-            aria-label="User menu"
+            aria-label="Open user menu"
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            title="User options (Cmd/Ctrl+Shift+U)"
           >
             {initial}
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-2xl shadow-black/10 dark:border-dark-800 dark:bg-dark-900 dark:shadow-black/40">
+            <div 
+              className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-2xl shadow-black/10 dark:border-dark-800 dark:bg-dark-900 dark:shadow-black/40"
+              role="menu"
+            >
               <button
                 className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-850"
                 onClick={() => {
@@ -132,6 +145,8 @@ export function Header() {
                   setActiveView('settings');
                   router.push('/');
                 }}
+                role="menuitem"
+                aria-label="Open profile settings"
               >
                 <User size={14} />
                 <span>Profile</span>
@@ -140,6 +155,8 @@ export function Header() {
               <button
                 className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-red-500 transition-colors hover:bg-gray-100 dark:text-red-400 dark:hover:bg-dark-850"
                 onClick={() => void handleSignOut()}
+                role="menuitem"
+                aria-label="Sign out from account"
               >
                 <LogOut size={14} />
                 <span>Sign out</span>

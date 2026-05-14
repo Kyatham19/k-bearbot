@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MarketStreamBar } from '@/components/market-stream/market-stream-bar';
@@ -12,6 +13,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
@@ -27,13 +29,16 @@ export function AppShell({ children }: AppShellProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, [setSidebarOpen]);
 
+  // Show market stream only on portfolio, brief, and watchlist pages
+  const showMarketStream = /\/(portfolio|daily-brief|watchlist)/.test(pathname);
+
   return (
     <div className="flex h-dvh w-full overflow-auto">
       <Sidebar />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Header />
-        <MarketStreamBar />
+        {showMarketStream && <MarketStreamBar />}
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>

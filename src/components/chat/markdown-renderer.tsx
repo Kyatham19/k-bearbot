@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import rehypeHighlight from 'rehype-highlight';
 import { Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { WebSource } from '@/lib/ai/web-search';
 
 interface MarkdownRendererProps {
   content: string;
@@ -17,6 +19,30 @@ interface MarkdownRendererProps {
    * only once the stream has finished.
    */
   streaming?: boolean;
+  /** Sources for inline [N] citation pills */
+  sources?: WebSource[];
+}
+
+/**
+ * Pre-process content: convert [N] (where 1 <= N <= sources.length) into
+ * <sup data-cite="N">N</sup> outside of fenced code blocks and inline code.
+ */
+function injectCitations(content: string, count: number): string {
+  if (count === 0) return content;
+  // Split by fenced code blocks (```...```) and inline code (`...`)
+  const parts = content.split(/(```[\s\S]*?```|`[^`]+`)/g);
+  return parts
+    .map((part) => {
+      if (part.startsWith('```') || (part.startsWith('`') && part.endsWith('`'))) {
+        return part;
+      }
+      return part.replace(/\[(\d+)\]/g, (match, n: string) => {
+        const idx = parseInt(n, 10);
+        if (idx < 1 || idx > count) return match;
+        return `<sup data-cite="${idx}">${idx}</sup>`;
+      });
+    })
+    .join('');
 }
 
 function CodeBlock({
@@ -79,10 +105,34 @@ function CodeBlock({
   );
 }
 
-export function MarkdownRenderer({ content, className, streaming = false }: MarkdownRendererProps) {
-  const rehypePlugins = streaming
-    ? []
-    : [[rehypeHighlight, { ignoreMissing: true, detect: true }] as const];
+export function MarkdownRenderer({
+  content,
+  className,
+  streaming = false,
+  sources,
+}: MarkdownRendererProps) {
+  const sourceCount = sources?.length ?? 0;
+  const processedContent = useMemo(
+    () => (sourceCount > 0 ? injectCitations(content, sourceCount) : content),
+    [content, sourceCount],
+  );
+
+  // rehype-raw lets us emit <sup> from a string. Always include it when we
+  // have sources, since we inject HTML. Skip highlighting while streaming.
+  const rehypePlugins = useMemo(() => {
+    const plugins: unknown[] = [];
+    if (sourceCount > 0) plugins.push(rehypeRaw);
+    if (!streaming) plugins.push([rehypeHighlight, { ignoreMissing: true, detect: true }]);
+    return plugins;
+  }, [streaming, sourceCount]);
+
+  const handleCiteClick = useCallback(
+    (n: number) => {
+      const src = sources?.[n - 1];
+      if (src?.url) window.open(src.url, '_blank', 'noopener,noreferrer');
+    },
+    [sources],
+  );
 
   return (
     <div
@@ -108,6 +158,24 @@ export function MarkdownRenderer({ content, className, streaming = false }: Mark
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         rehypePlugins={rehypePlugins as any}
         components={{
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          sup: ({ children, ...props }: any) => {
+            const cite = props['data-cite'];
+            const n = typeof cite === 'string' ? parseInt(cite, 10) : NaN;
+            if (!Number.isFinite(n) || n < 1) {
+              return <sup {...props}>{children}</sup>;
+            }
+            const src = sources?.[n - 1];
+            return (
+              <sup
+                onClick={() => handleCiteClick(n)}
+                title={src ? `${src.title} — ${src.source}` : `Source ${n}`}
+                className="ml-0.5 inline-flex h-4 min-w-[16px] cursor-pointer items-center justify-center rounded-[4px] bg-accent-green/15 px-1 text-[10px] font-semibold text-accent-green hover:bg-accent-green/25"
+              >
+                {n}
+              </sup>
+            );
+          },
           code: CodeBlock as any,
           table: ({ children, ...props }) => (
             <div className="my-4 overflow-x-auto rounded-lg border border-dark-700">
@@ -161,7 +229,7 @@ export function MarkdownRenderer({ content, className, streaming = false }: Mark
           ),
         }}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );

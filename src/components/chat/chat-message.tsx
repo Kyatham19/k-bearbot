@@ -151,12 +151,41 @@ export function ChatMessage({ message }: ChatMessageProps) {
 
             {/* Body */}
             {hasStreamingText && (
-              <MarkdownRenderer content={normalizedContent} streaming={isStreaming} />
+              <MarkdownRenderer
+                content={normalizedContent}
+                streaming={isStreaming}
+                sources={message.sources}
+              />
             )}
             {!hasStreamingText && isStreaming && <StreamingDots />}
             {!hasContent && !isStreaming && (
               <div className="text-[15px] leading-7 text-gray-400 dark:text-gray-400 italic">
                 {EMPTY_RESPONSE_FALLBACK}
+              </div>
+            )}
+
+            {/* Web sources footer */}
+            {!isStreaming && message.sources && message.sources.length > 0 && (
+              <div className="mt-4 rounded-lg border border-dark-700 bg-dark-900 p-3">
+                <div className="mb-2 text-[11px] uppercase tracking-wide text-dark-500">
+                  Sources
+                </div>
+                <ol className="space-y-1.5">
+                  {message.sources.map((s, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm">
+                      <span className="shrink-0 font-mono text-dark-500">[{i + 1}]</span>
+                      <a
+                        href={s.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="line-clamp-1 text-accent-green hover:underline"
+                      >
+                        {s.title}
+                      </a>
+                      <span className="shrink-0 text-xs text-dark-500">· {s.source}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             )}
 

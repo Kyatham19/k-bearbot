@@ -79,6 +79,9 @@ export function ChatInput({ onSend, onStop, isStreaming, disabled }: ChatInputPr
               'disabled:cursor-not-allowed disabled:opacity-50',
             )}
             style={{ maxHeight: 200 }}
+            aria-label="Chat message input"
+            role="textbox"
+            aria-multiline="true"
           />
 
           {/* Send / Stop button */}

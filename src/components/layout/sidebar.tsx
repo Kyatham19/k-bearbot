@@ -134,7 +134,15 @@ export function Sidebar() {
   const handleViewSelect = useCallback(
     (view: AppView) => {
       setActiveView(view);
-      router.push('/');
+      // Route to appropriate page based on view
+      const routes: Record<AppView, string> = {
+        chat: '/',
+        portfolio: '/portfolio',
+        brief: '/daily-brief',
+        watchlist: '/watchlist',
+        settings: '/settings',
+      };
+      router.push(routes[view]);
       const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
       if (isMobile) toggleSidebar();
     },

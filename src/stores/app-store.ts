@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { Conversation, Message, Json } from '@/types/database';
 import type { StockQuote } from '@/types/stock';
 import type { NewsItem } from '@/types/stock';
+import type { WebSource } from '@/lib/ai/web-search';
 
 // ── Extended chat message with client-side fields ──────────────────
 
@@ -11,6 +12,7 @@ export interface ChatMessage extends Message {
   isStreaming?: boolean;
   stockData?: StockQuote[];
   newsData?: NewsItem[];
+  sources?: WebSource[];
 }
 
 export type AppView = 'chat' | 'portfolio' | 'brief' | 'watchlist' | 'settings';

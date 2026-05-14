@@ -13,7 +13,7 @@
  */
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { motion, useReducedMotion, AnimatePresence } from 'framer-motion';
-import { ArrowUp, Square, ChevronDown, Check } from 'lucide-react';
+import { ArrowUp, Square, ChevronDown, Check, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface ModelOption {
@@ -39,6 +39,10 @@ interface GradientAIChatInputProps {
 
   enableAnimations?: boolean;
   className?: string;
+
+  /** Web-search toggle (per-turn) */
+  webSearchEnabled?: boolean;
+  onWebSearchToggle?: (next: boolean) => void;
 }
 
 // ── Teal/cyan gradient palette (dark-mode only) ──────────────────────
@@ -87,6 +91,8 @@ export function GradientAIChatInput({
   onModelSelect,
   enableAnimations = true,
   className,
+  webSearchEnabled = false,
+  onWebSearchToggle,
 }: GradientAIChatInputProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const shouldReduceMotion = useReducedMotion();
@@ -268,9 +274,45 @@ export function GradientAIChatInput({
             )}
           </div>
 
-          {/* Row 2 — model dropdown (only if options provided) */}
-          {showDropdown && (
+          {/* Row 2 — toolbar: web search toggle + (optional) model dropdown */}
+          {(showDropdown || onWebSearchToggle) && (
             <div className="flex items-center gap-2">
+              {onWebSearchToggle && (
+                <motion.button
+                  type="button"
+                  onClick={() => onWebSearchToggle(!webSearchEnabled)}
+                  disabled={disabled}
+                  title={
+                    webSearchEnabled
+                      ? 'Web search ON for this turn'
+                      : 'Click to search the web for this question'
+                  }
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full px-3 py-1',
+                    'text-xs font-medium transition-colors border',
+                    webSearchEnabled
+                      ? 'bg-accent-brand/15 text-accent-brand border-accent-brand/40 shadow-[0_0_0_1px_rgba(45,212,191,0.25)]'
+                      : 'bg-dark-850 text-gray-300 border-dark-700 hover:bg-dark-800 hover:text-gray-100',
+                    disabled && 'cursor-not-allowed opacity-50',
+                  )}
+                  whileHover={shouldAnimate && !disabled ? { scale: 1.02 } : {}}
+                  whileTap={shouldAnimate && !disabled ? { scale: 0.98 } : {}}
+                  aria-pressed={webSearchEnabled}
+                  aria-label="Toggle web search"
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  <span>Search</span>
+                  {webSearchEnabled && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-accent-brand" />
+                  )}
+                </motion.button>
+              )}
+            </div>
+          )}
+
+          {/* Row 3 — model dropdown (only if options provided) */}
+          {showDropdown && (
+            <div className="mt-2 flex items-center gap-2">
               <div className="relative" ref={dropdownRef}>
                 <motion.button
                   type="button"

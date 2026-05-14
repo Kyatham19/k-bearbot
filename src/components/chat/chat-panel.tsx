@@ -42,6 +42,7 @@ export function ChatPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   const hasMessages = messages.length > 0;
 
@@ -75,9 +76,10 @@ export function ChatPanel() {
   const handleSend = useCallback(() => {
     const content = draft.trim();
     if (!content || isStreaming) return;
-    sendMessage(content);
+    sendMessage(content, { forceWebSearch: webSearchEnabled });
     setDraft('');
-  }, [draft, isStreaming, sendMessage]);
+    setWebSearchEnabled(false);
+  }, [draft, isStreaming, sendMessage, webSearchEnabled]);
 
   const handleStop = useCallback(() => {
     stopStreaming();
@@ -124,6 +126,8 @@ export function ChatPanel() {
             isStreaming={isStreaming}
             placeholder="Ask about any stock, market, or portfolio…"
             modelOptions={[]}
+            webSearchEnabled={webSearchEnabled}
+            onWebSearchToggle={setWebSearchEnabled}
           />
           <p className="mt-2 text-center text-[11px] text-dark-500">
             AlphaSight can make mistakes. Verify critical financial decisions.

@@ -35,7 +35,7 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, opts?: { forceWebSearch?: boolean }) => {
       if (!content.trim() || isStreaming) return;
 
       const userMsg: ChatMessage = {
@@ -87,6 +87,7 @@ export function useChat() {
             message: userMsg.content,
             conversationId: activeConversationId,
             model: preferredModel,
+            forceWebSearch: opts?.forceWebSearch === true,
           }),
           signal: abortController.signal,
         });
@@ -262,6 +263,7 @@ export function useChat() {
               const md = latestAssistant.metadata as {
                 stockData?: unknown;
                 news?: unknown;
+                sources?: unknown;
               };
               const stockData = Array.isArray(md.stockData)
                 ? md.stockData
@@ -269,13 +271,16 @@ export function useChat() {
                   ? [md.stockData]
                   : undefined;
               const newsData = Array.isArray(md.news) ? md.news : undefined;
+              const sources = Array.isArray(md.sources) ? md.sources : undefined;
               updateMessage(assistantMsg.id, {
                 ...(stockData ? { stockData: stockData as ChatMessage['stockData'] } : {}),
                 ...(newsData ? { newsData: newsData as ChatMessage['newsData'] } : {}),
+                ...(sources ? { sources: sources as ChatMessage['sources'] } : {}),
               });
               console.debug('[useChat] sendMessage:metadata-applied', {
                 hasStock: Boolean(stockData),
                 hasNews: Boolean(newsData),
+                hasSources: Boolean(sources),
               });
             }
           }

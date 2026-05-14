@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { classifyIntent, streamChat, validateAiSetup } from "@/lib/ai";
-import { searchWeb, validateSerpApiSetup } from "@/lib/ai/web-search";
+import { searchWeb, validateSerpApiSetup, type WebSearchResult } from "@/lib/ai/web-search";
 import { buildUserContext } from "@/lib/ai/user-context";
 import { detectTanglish } from "@/lib/ai/lang-detect";
 import {
   LANG_INSTRUCTION_TANGLISH,
   LANG_INSTRUCTION_ENGLISH,
+  WEB_SEARCH_INSTRUCTION,
 } from "@/lib/ai/prompts";
 import { runDeepResearch, formatResearchBundle } from "@/lib/ai/deep-research";
 import { resolveSymbol } from "@/lib/stock/symbols";
@@ -202,10 +203,12 @@ export async function POST(request: NextRequest) {
       message?: string;
       conversationId?: string;
       model?: "mistral";
+      forceWebSearch?: boolean;
     };
     const incomingMessage = body.message?.trim() ?? "";
     const requestedConversationId = body.conversationId ?? null;
     const requestedModel: "mistral" = body.model ?? "mistral";
+    const forceWebSearch = body.forceWebSearch === true;
 
     if (!incomingMessage) {
       return chatJsonResponse("Please enter a message.", 400, {
@@ -478,21 +481,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Web search for general queries that need current info
-    let webSearchResults = "";
-    if (chatMode === "general" && validateSerpApiSetup().valid) {
-      const searchKeywords = /\b(current|latest|news|search|find|what is|who is|how to|update|recent|today|now)\b/i;
-      if (searchKeywords.test(incomingMessage)) {
-        try {
-          webSearchResults = await searchWeb(incomingMessage, 3);
-        } catch (error) {
-          console.warn("[chat-api] Web search failed:", error);
-          webSearchResults = "";
-        }
+    // Web search trigger: broadened auto-keywords + manual force flag + stock-mode news intent
+    const autoKeywords =
+      /\b(current|latest|news|update|recent|today|now|yesterday|this\s+week|this\s+month|what\s+is|who\s+is|where\s+is|when\s+did|why\s+did|how\s+to|explain|tell\s+me\s+about|compare|vs|versus|alternatives\s+to|review\s+of|opinion\s+on)\b/i;
+    const stockNewsIntent =
+      chatMode === "stock" && /\b(news|recent|today|latest|update)\b/i.test(incomingMessage);
+    const shouldSearch =
+      validateSerpApiSetup().valid &&
+      (forceWebSearch || autoKeywords.test(incomingMessage) || stockNewsIntent);
+
+    let webSearch: WebSearchResult | null = null;
+    if (shouldSearch) {
+      try {
+        webSearch = await searchWeb(incomingMessage, 5);
+        console.debug("[chat-api] web search complete", {
+          query: incomingMessage.slice(0, 80),
+          sourceCount: webSearch.sources.length,
+          forced: forceWebSearch,
+        });
+      } catch (error) {
+        console.warn("[chat-api] Web search failed:", error);
       }
     }
 
-    userMemory += webSearchResults ? `\n\nThinking:\n- Searching web for current information on "${incomingMessage}"\n- Found ${webSearchResults.split('\n').filter(l => l.trim()).length} relevant sources\n\nWeb Search Results:\n${webSearchResults}` : "";
+    if (webSearch && webSearch.sources.length > 0) {
+      userMemory += `\n\n${WEB_SEARCH_INSTRUCTION}\n\n${webSearch.formattedForPrompt}`;
+    }
 
     // Deep research pass for full stock analyses (skipped for simple price-only queries)
     if (chatMode === "stock" && stockAnalysis && stockAnalysis.history.length > 0) {
@@ -564,10 +578,9 @@ export async function POST(request: NextRequest) {
       });
 
       const metadata = buildStockMetadata(stockAnalysis);
-      if (Object.keys(metadata).length > 0) {
-        metadata.provider = usedProvider;
-      } else {
-        metadata.provider = usedProvider;
+      metadata.provider = usedProvider;
+      if (webSearch && webSearch.sources.length > 0) {
+        metadata.sources = webSearch.sources;
       }
 
       await supabase.from("messages").insert({
@@ -623,13 +636,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const hasWebSources = Boolean(webSearch && webSearch.sources.length > 0);
     const responseHeaders: Record<string, string> = {
       "Content-Type": "text/plain; charset=utf-8",
       "Transfer-Encoding": "chunked",
       "X-Conversation-Id": conversationId,
       "X-Has-Stock-Data": stockAnalysis ? "true" : "false",
+      "X-Has-Web-Sources": hasWebSources ? "true" : "false",
       "Access-Control-Expose-Headers":
-        "X-Conversation-Id, X-Has-Stock-Data, X-Stock-Symbol, X-Stock-Exchange",
+        "X-Conversation-Id, X-Has-Stock-Data, X-Stock-Symbol, X-Stock-Exchange, X-Has-Web-Sources",
     };
     if (stockAnalysis) {
       responseHeaders["X-Stock-Symbol"] = stockAnalysis.quote.symbol;
