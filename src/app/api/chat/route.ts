@@ -264,6 +264,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", activeConversationId)
+        .order("created_at", { ascending: false })
+        .limit(12),
+      buildUserContext(supabase, user.id).catch((err) => {
+        console.warn("[chat-api] buildUserContext failed", err);
+        return "";
+      }),
+      supabase
+        .from("user_preferences")
+        .select("language_mode")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+
+    // Insert user message after fetching history to avoid duplicating it in the LLM context
     const { error: userMessageError } = await supabase.from("messages").insert({
       conversation_id: activeConversationId,
       role: "user",
@@ -286,24 +305,6 @@ export async function POST(request: NextRequest) {
         .upsert({ user_id: user.id, key: "name", value: name }, { onConflict: "user_id,key" });
       if (error) console.error("[chat-api] Save name error:", error);
     }
-
-    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
-      supabase
-        .from("messages")
-        .select("role, content")
-        .eq("conversation_id", activeConversationId)
-        .order("created_at", { ascending: false })
-        .limit(12),
-      buildUserContext(supabase, user.id).catch((err) => {
-        console.warn("[chat-api] buildUserContext failed", err);
-        return "";
-      }),
-      supabase
-        .from("user_preferences")
-        .select("language_mode")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-    ]);
 
     const languageMode: "auto" | "english" | "tanglish" =
       (prefsResponse.data?.language_mode as "auto" | "english" | "tanglish") ?? "auto";
