@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
     };
     const incomingMessage = body.message?.trim() ?? "";
     const requestedConversationId = body.conversationId ?? null;
-    const requestedModel: "mistral" = "mistral";
+    const requestedModel: "mistral" = body.model ?? "mistral";
 
     if (!incomingMessage) {
       return chatJsonResponse("Please enter a message.", 400, {
@@ -264,6 +264,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("role, content")
+        .eq("conversation_id", activeConversationId)
+        .order("created_at", { ascending: false })
+        .limit(12),
+      buildUserContext(supabase, user.id).catch((err) => {
+        console.warn("[chat-api] buildUserContext failed", err);
+        return "";
+      }),
+      supabase
+        .from("user_preferences")
+        .select("language_mode")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+
+    // Insert user message after fetching history to avoid duplicating it in the LLM context
     const { error: userMessageError } = await supabase.from("messages").insert({
       conversation_id: activeConversationId,
       role: "user",
@@ -286,24 +305,6 @@ export async function POST(request: NextRequest) {
         .upsert({ user_id: user.id, key: "name", value: name }, { onConflict: "user_id,key" });
       if (error) console.error("[chat-api] Save name error:", error);
     }
-
-    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
-      supabase
-        .from("messages")
-        .select("role, content")
-        .eq("conversation_id", activeConversationId)
-        .order("created_at", { ascending: true })
-        .limit(6),
-      buildUserContext(supabase, user.id).catch((err) => {
-        console.warn("[chat-api] buildUserContext failed", err);
-        return "";
-      }),
-      supabase
-        .from("user_preferences")
-        .select("language_mode")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-    ]);
 
     const languageMode: "auto" | "english" | "tanglish" =
       (prefsResponse.data?.language_mode as "auto" | "english" | "tanglish") ?? "auto";
@@ -328,6 +329,7 @@ export async function POST(request: NextRequest) {
       .filter((m): m is { role: "user" | "assistant"; content: string } =>
         m.role === "user" || m.role === "assistant"
       )
+      .reverse()
       .map((m) => ({ role: m.role, content: m.content ?? "" }));
 
     let stockAnalysis: StockAnalysis | null = null;
