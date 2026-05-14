@@ -1,24 +1,33 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Star, Plus, TrendingUp, TrendingDown, X } from 'lucide-react';
+import { Star, Plus, TrendingUp, TrendingDown, X, Activity } from 'lucide-react';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { LivePrice } from '@/components/ui/live-price';
+import { useLiveQuotes, type LiveQuote } from '@/lib/hooks/use-live-quotes';
 
 interface WatchlistItem {
   id: string;
   symbol: string;
   name?: string;
-  price?: number;
-  change?: number;
-  changePercent?: number;
   added_at: string;
 }
 
-function WatchlistCard({ item, onRemove }: { item: WatchlistItem; onRemove: (id: string) => void }) {
+function WatchlistCard({
+  item,
+  quote,
+  onRemove,
+}: {
+  item: WatchlistItem;
+  quote?: LiveQuote;
+  onRemove: (id: string) => void;
+}) {
+  const change = quote?.change ?? null;
+  const changePct = quote?.changePct ?? null;
+  const positive = (change ?? 0) >= 0;
+
   return (
     <div className="rounded-xl border border-dark-700 bg-dark-800 p-4 hover:bg-dark-750 transition-colors">
       <div className="flex items-start justify-between mb-3">
@@ -41,23 +50,23 @@ function WatchlistCard({ item, onRemove }: { item: WatchlistItem; onRemove: (id:
         </Button>
       </div>
 
-      {item.price !== undefined ? (
+      {quote?.price != null ? (
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-lg font-bold text-gray-100">
-              {formatCurrency(item.price)}
-            </p>
-            {item.change !== undefined && item.changePercent !== undefined && (
-              <p className={cn(
-                'text-sm flex items-center gap-1',
-                item.change >= 0 ? 'text-accent-green' : 'text-accent-red'
-              )}>
-                {item.change >= 0 ? (
-                  <TrendingUp className="h-3 w-3" />
-                ) : (
-                  <TrendingDown className="h-3 w-3" />
+            <LivePrice
+              value={quote.price}
+              format={(v) => formatCurrency(v)}
+              className="text-lg font-bold text-gray-100"
+            />
+            {change != null && changePct != null && (
+              <p
+                className={cn(
+                  'text-sm flex items-center gap-1 mt-0.5',
+                  positive ? 'text-accent-green' : 'text-accent-red'
                 )}
-                {formatCurrency(Math.abs(item.change))} ({formatPercent(item.changePercent)})
+              >
+                {positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {formatCurrency(Math.abs(change))} ({formatPercent(changePct)})
               </p>
             )}
           </div>
@@ -69,9 +78,7 @@ function WatchlistCard({ item, onRemove }: { item: WatchlistItem; onRemove: (id:
           </div>
         </div>
       ) : (
-        <div className="text-sm text-dark-400">
-          Price data unavailable
-        </div>
+        <div className="text-sm text-dark-400">Loading live price…</div>
       )}
     </div>
   );
@@ -87,30 +94,10 @@ export default function WatchlistPage() {
 
   const fetchWatchlist = async () => {
     try {
-      const response = await fetch('/api/watchlist');
+      const response = await fetch('/api/watchlist', { cache: 'no-store' });
       if (response.ok) {
         const data = await response.json();
-        // Fetch current prices for watchlist items
-        const itemsWithPrices = await Promise.all(
-          (data.watchlist || []).map(async (item: WatchlistItem) => {
-            try {
-              const priceResponse = await fetch(`/api/stock/quote?symbol=${item.symbol}`);
-              if (priceResponse.ok) {
-                const priceData = await priceResponse.json();
-                return {
-                  ...item,
-                  price: priceData.quote?.price,
-                  change: priceData.quote?.change,
-                  changePercent: priceData.quote?.changePercent,
-                };
-              }
-            } catch {
-              // Price fetch failed, continue without price
-            }
-            return item;
-          })
-        );
-        setWatchlist(itemsWithPrices);
+        setWatchlist(data.watchlist || []);
       }
     } catch (error) {
       console.error('Failed to fetch watchlist:', error);
@@ -122,6 +109,9 @@ export default function WatchlistPage() {
   useEffect(() => {
     fetchWatchlist();
   }, []);
+
+  const symbols = useMemo(() => watchlist.map((w) => w.symbol), [watchlist]);
+  const liveQuotes = useLiveQuotes(symbols, 2000);
 
   const searchStocks = async (query: string) => {
     if (query.length < 2) {
@@ -218,8 +208,13 @@ export default function WatchlistPage() {
             <Star className="h-6 w-6 text-accent-amber" />
             Watchlist
           </h1>
-          <p className="text-sm text-dark-400 mt-1">
-            Track stocks you're interested in monitoring
+          <p className="text-sm text-dark-400 mt-1 flex items-center gap-1.5">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70" />
+              <span className="absolute inset-0 rounded-full bg-emerald-400" />
+            </span>
+            <Activity className="h-3 w-3 text-emerald-400" />
+            Live · prices refresh every 2s
           </p>
         </div>
         <div className="flex gap-3">
@@ -291,6 +286,7 @@ export default function WatchlistPage() {
             <WatchlistCard
               key={item.id}
               item={item}
+              quote={liveQuotes[item.symbol]}
               onRemove={handleRemoveFromWatchlist}
             />
           ))}

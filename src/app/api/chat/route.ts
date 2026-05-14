@@ -492,7 +492,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    userMemory += webSearchResults ? `\n\nWeb Search Results:\n${webSearchResults}` : "";
+    userMemory += webSearchResults ? `\n\nThinking:\n- Searching web for current information on "${incomingMessage}"\n- Found ${webSearchResults.split('\n').filter(l => l.trim()).length} relevant sources\n\nWeb Search Results:\n${webSearchResults}` : "";
 
     // Deep research pass for full stock analyses (skipped for simple price-only queries)
     if (chatMode === "stock" && stockAnalysis && stockAnalysis.history.length > 0) {

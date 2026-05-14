@@ -6,7 +6,7 @@ type SetAllCookies = (
   cookies: Array<{ name: string; value: string; options?: CookieOptions }>
 ) => void;
 
-const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/api/daily-brief"];
+const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/api/daily-brief", "/api/market-stream", "/api/quotes"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

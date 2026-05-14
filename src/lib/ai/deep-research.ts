@@ -142,7 +142,9 @@ function fmtNews(items: NewsItem[], cap: number): string {
 }
 
 export function formatResearchBundle(bundle: ResearchBundle): string {
-  const blocks: string[] = ["DEEP RESEARCH CONTEXT"];
+  const blocks: string[] = [
+    "Thinking:\n- Conducting deep research for comprehensive analysis\n- Searching for company-specific news and developments\n- Gathering sector and industry updates\n- Monitoring key commodity and input cost movements\n- Analyzing geopolitical and macro-economic factors\n- Identifying peer companies for performance comparison\n\nDEEP RESEARCH CONTEXT"
+  ];
 
   if (bundle.peers.length > 0) {
     blocks.push(`Peer companies to compare against: ${bundle.peers.join(", ")}`);

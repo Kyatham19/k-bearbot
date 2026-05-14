@@ -26,7 +26,17 @@
       "Bash(echo \"PID=$!\")",
       "Read(//tmp/**)",
       "Bash(find *)",
-      "Bash(npx skills *)"
+      "Bash(npx skills *)",
+      "mcp__supabase__list_tables",
+      "mcp__supabase__get_advisors",
+      "mcp__supabase__apply_migration",
+      "mcp__supabase__execute_sql",
+      "Bash(git status *)",
+      "Bash(git fetch *)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

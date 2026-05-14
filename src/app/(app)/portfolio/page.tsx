@@ -1,16 +1,34 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, TrendingUp, TrendingDown, DollarSign, BarChart3, RefreshCw } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { Plus, TrendingUp, TrendingDown, DollarSign, BarChart3, RefreshCw, Activity } from 'lucide-react';
 import { cn, formatCurrency, formatPercent } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton';
+import { LivePrice } from '@/components/ui/live-price';
+import { useLiveQuotes } from '@/lib/hooks/use-live-quotes';
 import type { PortfolioHolding } from '@/types/stock';
 import { AddHoldingModal } from '@/components/portfolio/add-holding-modal';
 
-function PortfolioCard({ holding }: { holding: PortfolioHolding }) {
-  const isPositive = holding.pnl >= 0;
+type EnrichedHolding = PortfolioHolding & {
+  livePrice: number | null;
+  liveValue: number;
+  livePnl: number;
+  livePnlPct: number;
+};
+
+function enrich(h: PortfolioHolding, livePrice: number | null): EnrichedHolding {
+  const price = livePrice ?? h.currentPrice ?? 0;
+  const liveValue = price * h.quantity;
+  const invested = h.avg_buy_price * h.quantity;
+  const livePnl = liveValue - invested;
+  const livePnlPct = invested > 0 ? (livePnl / invested) * 100 : 0;
+  return { ...h, livePrice, liveValue, livePnl, livePnlPct };
+}
+
+function PortfolioCard({ holding }: { holding: EnrichedHolding }) {
+  const isPositive = holding.livePnl >= 0;
 
   return (
     <div className="rounded-xl border border-dark-700 bg-dark-800 p-4 hover:bg-dark-750 transition-colors">
@@ -20,7 +38,7 @@ function PortfolioCard({ holding }: { holding: PortfolioHolding }) {
           <p className="text-sm text-dark-400">{holding.name || holding.symbol}</p>
         </div>
         <Badge variant={isPositive ? 'green' : 'red'}>
-          {formatPercent(holding.pnlPercent)}
+          {formatPercent(holding.livePnlPct)}
         </Badge>
       </div>
 
@@ -35,49 +53,53 @@ function PortfolioCard({ holding }: { holding: PortfolioHolding }) {
         </div>
         <div>
           <p className="text-dark-400">Current Price</p>
-          <p className="font-medium text-gray-100">{formatCurrency(holding.currentPrice)}</p>
+          <LivePrice
+            value={holding.livePrice}
+            className="font-medium text-gray-100"
+            format={(v) => formatCurrency(v)}
+          />
         </div>
         <div>
-          <p className="text-dark-400">P&L</p>
-          <p className={cn(
-            'font-medium',
-            isPositive ? 'text-accent-green' : 'text-accent-red'
-          )}>
-            {formatCurrency(Math.abs(holding.pnl))}
-          </p>
+          <p className="text-dark-400">P&amp;L</p>
+          <LivePrice
+            value={holding.livePnl}
+            flash={false}
+            format={(v) => formatCurrency(Math.abs(v))}
+            className={cn('font-medium', isPositive ? 'text-accent-green' : 'text-accent-red')}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function PortfolioSummary({ holdings }: { holdings: PortfolioHolding[] }) {
-  const totalValue = holdings.reduce((sum, h) => sum + h.currentValue, 0);
-  const totalCost = holdings.reduce(
-    (sum, h) => sum + h.quantity * h.avg_buy_price,
-    0
-  );
+function PortfolioSummary({ holdings }: { holdings: EnrichedHolding[] }) {
+  const totalValue = holdings.reduce((sum, h) => sum + h.liveValue, 0);
+  const totalCost = holdings.reduce((sum, h) => sum + h.quantity * h.avg_buy_price, 0);
   const totalPnl = totalValue - totalCost;
   const totalPnlPercent = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
   const cards = [
     {
       label: 'Total Value',
-      value: formatCurrency(totalValue),
+      value: totalValue,
+      format: (v: number) => formatCurrency(v),
       icon: DollarSign,
       color: 'text-accent-green',
       bgColor: 'bg-accent-green/10',
     },
     {
       label: 'Total P&L',
-      value: `${formatCurrency(Math.abs(totalPnl))} (${formatPercent(totalPnlPercent)})`,
+      value: totalPnl,
+      format: (v: number) => `${formatCurrency(Math.abs(v))} (${formatPercent(totalPnlPercent)})`,
       icon: totalPnl >= 0 ? TrendingUp : TrendingDown,
       color: totalPnl >= 0 ? 'text-accent-green' : 'text-accent-red',
       bgColor: totalPnl >= 0 ? 'bg-accent-green/10' : 'bg-accent-red/10',
     },
     {
       label: 'Holdings',
-      value: holdings.length.toString(),
+      value: holdings.length,
+      format: (v: number) => v.toString(),
       icon: BarChart3,
       color: 'text-accent-blue',
       bgColor: 'bg-accent-blue/10',
@@ -94,7 +116,12 @@ function PortfolioSummary({ holdings }: { holdings: PortfolioHolding[] }) {
             </div>
             <div>
               <p className="text-sm text-dark-400">{card.label}</p>
-              <p className="text-xl font-bold text-gray-100">{card.value}</p>
+              <LivePrice
+                value={card.value}
+                format={card.format}
+                flash={index !== 2}
+                className="text-xl font-bold text-gray-100"
+              />
             </div>
           </div>
         </div>
@@ -110,7 +137,7 @@ export default function PortfolioPage() {
 
   const fetchHoldings = async () => {
     try {
-      const response = await fetch('/api/portfolio');
+      const response = await fetch('/api/portfolio', { cache: 'no-store' });
       if (response.ok) {
         const data = await response.json();
         setHoldings(data.holdings || []);
@@ -125,6 +152,14 @@ export default function PortfolioPage() {
   useEffect(() => {
     fetchHoldings();
   }, []);
+
+  const symbols = useMemo(() => holdings.map((h) => h.symbol), [holdings]);
+  const liveQuotes = useLiveQuotes(symbols, 2000);
+
+  const enriched = useMemo(
+    () => holdings.map((h) => enrich(h, liveQuotes[h.symbol]?.price ?? null)),
+    [holdings, liveQuotes]
+  );
 
   const handleHoldingAdded = () => {
     fetchHoldings();
@@ -168,8 +203,13 @@ export default function PortfolioPage() {
             <BarChart3 className="h-6 w-6 text-accent-blue" />
             Portfolio
           </h1>
-          <p className="text-sm text-dark-400 mt-1">
-            Track your investments and monitor performance
+          <p className="text-sm text-dark-400 mt-1 flex items-center gap-1.5">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70" />
+              <span className="absolute inset-0 rounded-full bg-emerald-400" />
+            </span>
+            <Activity className="h-3 w-3 text-emerald-400" />
+            Live · prices refresh every 2s
           </p>
         </div>
         <div className="flex gap-3">
@@ -189,10 +229,10 @@ export default function PortfolioPage() {
       </div>
 
       {/* Portfolio Summary */}
-      {holdings.length > 0 && <PortfolioSummary holdings={holdings} />}
+      {enriched.length > 0 && <PortfolioSummary holdings={enriched} />}
 
       {/* Holdings Grid */}
-      {holdings.length === 0 ? (
+      {enriched.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="rounded-full bg-dark-800 p-6 mb-4">
             <BarChart3 className="h-12 w-12 text-dark-500" />
@@ -210,7 +250,7 @@ export default function PortfolioPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {holdings.map((holding) => (
+          {enriched.map((holding) => (
             <PortfolioCard key={holding.id} holding={holding} />
           ))}
         </div>
