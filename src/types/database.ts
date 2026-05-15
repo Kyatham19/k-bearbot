@@ -159,6 +159,7 @@ export type Database = {
           timezone: string;
           is_active: boolean;
           created_at: string;
+          last_sent_at: string | null;
         };
         Insert: {
           id?: string;
@@ -169,6 +170,7 @@ export type Database = {
           timezone: string;
           is_active?: boolean;
           created_at?: string;
+          last_sent_at?: string | null;
         };
         Update: {
           id?: string;
@@ -179,6 +181,7 @@ export type Database = {
           timezone?: string;
           is_active?: boolean;
           created_at?: string;
+          last_sent_at?: string | null;
         };
         Relationships: [];
       };

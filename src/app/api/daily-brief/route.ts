@@ -327,10 +327,11 @@ export async function POST(request: NextRequest) {
       // Get all active scheduled reports
       const { data: schedules, error: schedulesError } = await adminSupabase
         .from("scheduled_reports")
-        .select("id, user_id, email, stocks, schedule_time, timezone, is_active")
+        .select("id, user_id, email, stocks, schedule_time, timezone, is_active, last_sent_at")
         .eq("is_active", true);
 
       if (schedulesError || !schedules) {
+        console.error("scheduled_reports select error:", schedulesError);
         return NextResponse.json(
           { error: "Failed to fetch scheduled reports" },
           { status: 500 }
@@ -361,6 +362,15 @@ export async function POST(request: NextRequest) {
 
           if (timeDiff > thirtyMinutes) {
             continue; // Not time for this user yet
+          }
+
+          // Dedup: skip if we already sent within the last 23 hours
+          if (schedule.last_sent_at) {
+            const lastSentMs = new Date(schedule.last_sent_at).getTime();
+            const twentyThreeHours = 23 * 60 * 60 * 1000;
+            if (now.getTime() - lastSentMs < twentyThreeHours) {
+              continue;
+            }
           }
 
           processed++;
@@ -434,6 +444,10 @@ ${stockSymbols.map((symbol: string, index: number) => `${symbol}: [insight for $
           if (emailSent) {
             sent++;
             console.log(`Successfully sent daily brief to ${schedule.email} for ${stockSymbols.length} stocks`);
+            await adminSupabase
+              .from("scheduled_reports")
+              .update({ last_sent_at: new Date().toISOString() })
+              .eq("id", schedule.id);
           } else {
             failed++;
             console.error(`Failed to send email to ${schedule.email}`);

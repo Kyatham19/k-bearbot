@@ -18,6 +18,8 @@ import {
   Mail,
   Plus,
   Trash2,
+  Pencil,
+  Power,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -320,6 +322,7 @@ function DailyBriefSettings({
   setLoading: (loading: boolean) => void;
 }) {
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this scheduled report?')) return;
@@ -335,6 +338,32 @@ function DailyBriefSettings({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleToggleActive = async (report: any) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/scheduled-reports/${report.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !report.is_active }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        onReportsChange(reports.map(r => r.id === report.id ? data.report : r));
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatLastSent = (iso: string | null) => {
+    if (!iso) return 'Never';
+    return new Date(iso).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
   };
 
   return (
@@ -390,42 +419,70 @@ function DailyBriefSettings({
           </div>
         ) : (
           reports.map((report) => (
-            <div
-              key={report.id}
-              className="flex items-center justify-between p-4 rounded-lg border border-dark-700 bg-dark-850"
-            >
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-accent-blue" />
-                  <span className="text-sm font-medium text-gray-100">
-                    {report.schedule_time}
-                  </span>
-                  <span className="text-xs text-dark-400">
-                    ({report.timezone})
-                  </span>
+            <div key={report.id} className="rounded-lg border border-dark-700 bg-dark-850">
+              {editingId === report.id ? (
+                <div className="p-2">
+                  <CreateScheduleForm
+                    initialData={report}
+                    reportId={report.id}
+                    onSuccess={(updated) => {
+                      onReportsChange(reports.map(r => r.id === report.id ? updated : r));
+                      setEditingId(null);
+                    }}
+                    onCancel={() => setEditingId(null)}
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-dark-400" />
-                  <span className="text-sm text-gray-300">{report.email}</span>
+              ) : (
+                <div className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-accent-blue" />
+                      <span className="text-sm font-medium text-gray-100">{report.schedule_time}</span>
+                      <span className="text-xs text-dark-400">({report.timezone})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-dark-400" />
+                      <span className="text-sm text-gray-300">{report.email}</span>
+                    </div>
+                    <Badge variant={report.is_active ? 'green' : 'gray'}>
+                      {report.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                    <span className="text-xs text-dark-400">
+                      {report.stocks.length} stocks · last sent {formatLastSent(report.last_sent_at)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      onClick={() => handleToggleActive(report)}
+                      variant="ghost"
+                      size="sm"
+                      disabled={loading}
+                      title={report.is_active ? 'Pause' : 'Resume'}
+                    >
+                      <Power className={cn('h-4 w-4', report.is_active ? 'text-accent-green' : 'text-dark-400')} />
+                    </Button>
+                    <Button
+                      onClick={() => setEditingId(report.id)}
+                      variant="ghost"
+                      size="sm"
+                      disabled={loading}
+                      title="Edit"
+                    >
+                      <Pencil className="h-4 w-4 text-accent-blue" />
+                    </Button>
+                    <Button
+                      onClick={() => handleDelete(report.id)}
+                      variant="ghost"
+                      size="sm"
+                      disabled={loading}
+                      className="text-accent-red hover:text-accent-red hover:bg-accent-red/10"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <Badge variant={report.is_active ? 'green' : 'gray'}>
-                  {report.is_active ? 'Active' : 'Inactive'}
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-dark-400">
-                  {report.stocks.length} stocks
-                </span>
-                <Button
-                  onClick={() => handleDelete(report.id)}
-                  variant="ghost"
-                  size="sm"
-                  disabled={loading}
-                  className="text-accent-red hover:text-accent-red hover:bg-accent-red/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
+              )}
             </div>
           ))
         )}
@@ -436,17 +493,22 @@ function DailyBriefSettings({
 
 function CreateScheduleForm({
   onSuccess,
-  onCancel
+  onCancel,
+  initialData,
+  reportId,
 }: {
   onSuccess: (report: any) => void;
   onCancel: () => void;
+  initialData?: { email: string; stocks: string[]; schedule_time: string; timezone: string; is_active: boolean };
+  reportId?: string;
 }) {
+  const isEdit = !!reportId;
   const [formData, setFormData] = useState({
-    email: '',
-    stocks: [] as string[],
-    schedule_time: '07:00',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    is_active: true,
+    email: initialData?.email ?? '',
+    stocks: (initialData?.stocks ?? []) as string[],
+    schedule_time: initialData?.schedule_time ?? '07:00',
+    timezone: initialData?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    is_active: initialData?.is_active ?? true,
   });
   const [stockInput, setStockInput] = useState('');
   const [searchResults, setSearchResults] = useState<Array<{ symbol: string; name: string; exchange: string; type: string }>>([]);
@@ -527,8 +589,10 @@ function CreateScheduleForm({
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/scheduled-reports', {
-        method: 'POST',
+      const url = isEdit ? `/api/scheduled-reports/${reportId}` : '/api/scheduled-reports';
+      const method = isEdit ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
@@ -674,7 +738,7 @@ function CreateScheduleForm({
           disabled={!formData.email || formData.stocks.length === 0}
           size="sm"
         >
-          Create Schedule
+          {isEdit ? 'Save Changes' : 'Create Schedule'}
         </Button>
       </div>
     </div>
