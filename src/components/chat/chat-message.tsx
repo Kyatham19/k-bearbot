@@ -71,10 +71,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isStreaming = message.isStreaming;
   const normalizedContent = useMemo(
-    () =>
-      message.content
+    () => {
+      if (typeof message.content !== 'string') return '';
+      return message.content
         .replace(/[\u200B-\u200D\uFEFF]/g, '')
-        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ''),
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+    },
     [message.content],
   );
 
@@ -192,6 +194,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={() => setFeedback('good')}
+                  aria-label="Mark response as helpful"
+                  aria-pressed={feedback === 'good'}
                   className={cn(
                     'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
                     feedback === 'good'
@@ -204,6 +208,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
                 </button>
                 <button
                   onClick={() => setFeedback('poor')}
+                  aria-label="Mark response as unhelpful"
+                  aria-pressed={feedback === 'poor'}
                   className={cn(
                     'flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors',
                     feedback === 'poor'

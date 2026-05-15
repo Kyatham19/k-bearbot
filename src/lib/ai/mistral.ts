@@ -149,6 +149,7 @@ function parseNonStreamingText(data: unknown): string {
   if (!data || typeof data !== "object") return "";
   const choices = (data as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = choices?.[0]?.message?.content;
+  if (!content) return "";
   if (typeof content === "string") return content;
   return parseMistralDeltaText(content);
 }
