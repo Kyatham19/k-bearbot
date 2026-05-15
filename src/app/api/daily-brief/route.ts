@@ -9,9 +9,77 @@ import { generateExcelReport } from "@/lib/excel-generator";
 import { sendDailyBriefEmail } from "@/lib/email-sender";
 import type { PortfolioSnapshot, PortfolioSnapshotItem } from "@/types/stock";
 import type { ExcelStockData } from "@/lib/excel-generator";
-// Types
 
-// Note: Removed shouldSendBrief function as we now use UTC-based scheduling
+type ScheduledReportRow = {
+  id: string;
+  user_id: string;
+  email: string;
+  stocks: string[];
+  schedule_time: string;
+  timezone: string;
+  is_active: boolean;
+  last_sent_at: string | null;
+};
+
+const SCHEDULE_LOOKBACK_MINUTES = 90;
+
+function isCronAuthorized(request: NextRequest): boolean {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) return false;
+
+  const authHeader = request.headers.get("authorization");
+  const customHeader = request.headers.get("x-cron-secret");
+
+  return authHeader === `Bearer ${cronSecret}` || customHeader === cronSecret;
+}
+
+function getZonedParts(date: Date, timeZone: string): {
+  hour: number;
+  minute: number;
+  dayKey: string;
+} {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? "0";
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+
+  return {
+    hour: Number(value("hour")),
+    minute: Number(value("minute")),
+    dayKey: `${year}-${month}-${day}`,
+  };
+}
+
+function shouldRunScheduledReport(schedule: ScheduledReportRow, now: Date): boolean {
+  const [scheduledHour, scheduledMinute] = schedule.schedule_time.split(":").map(Number);
+  if (!Number.isFinite(scheduledHour) || !Number.isFinite(scheduledMinute)) return false;
+
+  const localNow = getZonedParts(now, schedule.timezone);
+  const scheduledMinuteOfDay = scheduledHour * 60 + scheduledMinute;
+  const currentMinuteOfDay = localNow.hour * 60 + localNow.minute;
+  const minutesSinceScheduled = currentMinuteOfDay - scheduledMinuteOfDay;
+
+  // Run after the user's configured local time, with a lookback window for
+  // delayed cron invocations. Do not send before the selected time.
+  if (minutesSinceScheduled < 0 || minutesSinceScheduled > SCHEDULE_LOOKBACK_MINUTES) {
+    return false;
+  }
+
+  if (!schedule.last_sent_at) return true;
+
+  const lastSentLocal = getZonedParts(new Date(schedule.last_sent_at), schedule.timezone);
+  return lastSentLocal.dayKey !== localNow.dayKey;
+}
 
 /**
  * Generate Excel data for stocks
@@ -70,8 +138,14 @@ async function generateStockExcelData(stocks: string[], aiInsights: string[]): P
 
 /**
  * GET /api/daily-brief - Fetch the latest daily brief for the authenticated user.
+ * Vercel Cron also invokes this route with GET, so authorized cron requests
+ * run scheduled reports instead of user brief fetching.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (isCronAuthorized(request)) {
+    return processScheduledReports();
+  }
+
   try {
     const supabase = await createClient();
     const {
@@ -305,85 +379,52 @@ async function generateBriefForUser(
   return { content, snapshot };
 }
 
-/**
- * POST /api/daily-brief - Generate a new daily brief.
- * Can be triggered by:
- *   1. Authenticated user (generates for their portfolio)
- *   2. Cron job with CRON_SECRET header (generates for all users with portfolios)
- */
-export async function POST(request: NextRequest) {
+async function processScheduledReports() {
   try {
-    // Support both Vercel cron (Authorization: Bearer <CRON_SECRET>) and custom header
-    const cronSecret = request.headers.get("x-cron-secret");
-    const authHeader = request.headers.get("authorization");
-    const vercelCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
-    const isCronJob =
-      vercelCron || (cronSecret && cronSecret === process.env.CRON_SECRET);
+    const adminSupabase = createAdminClient();
 
-    if (isCronJob) {
-      // Admin mode: process scheduled reports
-      const adminSupabase = createAdminClient();
+    const { data: schedules, error: schedulesError } = await adminSupabase
+      .from("scheduled_reports")
+      .select("id, user_id, email, stocks, schedule_time, timezone, is_active, last_sent_at")
+      .eq("is_active", true);
 
-      // Get all active scheduled reports
-      const { data: schedules, error: schedulesError } = await adminSupabase
-        .from("scheduled_reports")
-        .select("id, user_id, email, stocks, schedule_time, timezone, is_active, last_sent_at")
-        .eq("is_active", true);
+    if (schedulesError || !schedules) {
+      console.error("scheduled_reports select error:", schedulesError);
+      return NextResponse.json(
+        { error: "Failed to fetch scheduled reports" },
+        { status: 500 }
+      );
+    }
 
-      if (schedulesError || !schedules) {
-        console.error("scheduled_reports select error:", schedulesError);
-        return NextResponse.json(
-          { error: "Failed to fetch scheduled reports" },
-          { status: 500 }
-        );
-      }
+    const now = new Date();
+    let due = 0;
+    let processed = 0;
+    let sent = 0;
+    let failed = 0;
+    let skipped = 0;
 
-      let processed = 0;
-      let sent = 0;
-      let failed = 0;
+    for (const schedule of schedules as ScheduledReportRow[]) {
+      try {
+        if (!shouldRunScheduledReport(schedule, now)) {
+          skipped++;
+          continue;
+        }
 
-      // Process each scheduled report
-      for (const schedule of schedules) {
+        due++;
+        processed++;
+
+        const stockSymbols = Array.isArray(schedule.stocks) ? schedule.stocks : [];
+        if (!schedule.email || stockSymbols.length === 0) {
+          failed++;
+          console.error(`Scheduled report ${schedule.id} is missing email or stocks`);
+          continue;
+        }
+
+        let aiSummary = "";
+        let aiInsights: string[] = [];
+
         try {
-          // Since cron runs at 6 AM UTC daily, check if this user's schedule matches
-          // The schedule_time is in their local timezone, so we need to check if
-          // their scheduled time corresponds to approximately now (6 AM UTC)
-          const now = new Date();
-          const userTime = new Date(now.toLocaleString("en-US", { timeZone: schedule.timezone }));
-
-          // Extract scheduled hour and minute
-          const [scheduledHour, scheduledMinute] = schedule.schedule_time.split(':').map(Number);
-          const userScheduledTime = new Date(userTime);
-          userScheduledTime.setHours(scheduledHour, scheduledMinute, 0, 0);
-
-          // Check if current UTC time is within 90 minutes of when this user's schedule should run.
-          // Wide window because Vercel Hobby cron has ±59 min precision and only fires once/day.
-          const timeDiff = Math.abs(now.getTime() - userScheduledTime.getTime());
-          const ninetyMinutes = 90 * 60 * 1000;
-
-          if (timeDiff > ninetyMinutes) {
-            continue; // Not time for this user yet
-          }
-
-          // Dedup: skip if we already sent within the last 23 hours
-          if (schedule.last_sent_at) {
-            const lastSentMs = new Date(schedule.last_sent_at).getTime();
-            const twentyThreeHours = 23 * 60 * 60 * 1000;
-            if (now.getTime() - lastSentMs < twentyThreeHours) {
-              continue;
-            }
-          }
-
-          processed++;
-
-          // Generate AI insights for all stocks in one call
-          const stockSymbols = schedule.stocks;
-          let aiSummary = '';
-          let aiInsights: string[] = [];
-
-          try {
-            // Create a prompt for batch analysis
-            const prompt = `Generate a daily stock market summary and individual insights for these stocks: ${stockSymbols.join(', ')}.
+          const prompt = `Generate a daily stock market summary and individual insights for these stocks: ${stockSymbols.join(", ")}.
 
 Provide:
 1. A short overall market summary (2-3 sentences)
@@ -392,142 +433,148 @@ Provide:
 Format as:
 SUMMARY: [your summary]
 
-${stockSymbols.map((symbol: string, index: number) => `${symbol}: [insight for ${symbol}]`).join('\n')}`;
+${stockSymbols.map((symbol: string) => `${symbol}: [insight for ${symbol}]`).join("\n")}`;
 
-            const aiResponse = await generateDailyBrief(prompt);
-            if (aiResponse) {
-              // Parse the AI response
-              const lines = aiResponse.split('\n');
-              const summaryLine = lines.find(line => line.startsWith('SUMMARY:'));
-              aiSummary = summaryLine ? summaryLine.replace('SUMMARY:', '').trim() : 'Market summary unavailable.';
+          const aiResponse = await generateDailyBrief(prompt);
+          if (aiResponse) {
+            const lines = aiResponse.split("\n");
+            const summaryLine = lines.find((line) => line.startsWith("SUMMARY:"));
+            aiSummary = summaryLine
+              ? summaryLine.replace("SUMMARY:", "").trim()
+              : "Market summary unavailable.";
 
-              // Extract individual insights
-              aiInsights = stockSymbols.map((symbol: string) => {
-                const insightLine = lines.find((line: string) => line.startsWith(`${symbol}:`));
-                return insightLine ? insightLine.replace(`${symbol}:`, '').trim() : `No specific insight for ${symbol}`;
-              });
-            } else {
-              aiSummary = 'AI summary generation failed.';
-              aiInsights = stockSymbols.map(() => 'AI insight unavailable');
-            }
-          } catch (aiError) {
-            console.error(`AI generation failed for user ${schedule.user_id}:`, aiError);
-            aiSummary = 'AI summary generation failed.';
-            aiInsights = stockSymbols.map(() => 'AI insight unavailable');
-          }
-
-          // Fetch market indices for context
-          const indices = ['^GSPC', '^IXIC', '^DJI'];
-          const marketIndices: Array<{ symbol: string; price: number; change: number; changePercent: number }> = [];
-          for (const symbol of indices) {
-            try {
-              const quote = await fetchQuote(symbol);
-              if (quote) {
-                marketIndices.push({
-                  symbol: quote.symbol === '^GSPC' ? 'S&P 500' : quote.symbol === '^IXIC' ? 'NASDAQ' : 'Dow Jones',
-                  price: quote.price,
-                  change: quote.change,
-                  changePercent: quote.changePercent,
-                });
-              }
-            } catch {
-              // Skip failed indices
-            }
-          }
-
-          // Generate Excel data
-          const excelData = await generateStockExcelData(stockSymbols, aiInsights);
-          const excelBuffer = generateExcelReport(excelData, `Daily Stock Report - ${new Date().toDateString()}`);
-
-          // Send email
-          const emailSent = await sendDailyBriefEmail(schedule.email, aiSummary, excelBuffer);
-
-          if (emailSent) {
-            sent++;
-            console.log(`Successfully sent daily brief to ${schedule.email} for ${stockSymbols.length} stocks`);
-            await adminSupabase
-              .from("scheduled_reports")
-              .update({ last_sent_at: new Date().toISOString() })
-              .eq("id", schedule.id);
+            aiInsights = stockSymbols.map((symbol: string) => {
+              const insightLine = lines.find((line: string) => line.startsWith(`${symbol}:`));
+              return insightLine
+                ? insightLine.replace(`${symbol}:`, "").trim()
+                : `No specific insight for ${symbol}`;
+            });
           } else {
-            failed++;
-            console.error(`Failed to send email to ${schedule.email}`);
+            aiSummary = "AI summary generation failed.";
+            aiInsights = stockSymbols.map(() => "AI insight unavailable");
           }
-
-        } catch (err) {
-          console.error(`Failed to process scheduled report for user ${schedule.user_id}:`, err);
-          failed++;
+        } catch (aiError) {
+          console.error(`AI generation failed for user ${schedule.user_id}:`, aiError);
+          aiSummary = "AI summary generation failed.";
+          aiInsights = stockSymbols.map(() => "AI insight unavailable");
         }
-      }
 
-      return NextResponse.json({
-        success: true,
-        processed,
-        sent,
-        failed,
-        totalSchedules: schedules.length,
-      });
-    } else {
-      // User mode: generate brief for authenticated user
-      const supabase = await createClient();
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
-
-      if (authError || !user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-
-      // Fetch user's holdings
-      const { data: holdings, error: holdingsError } = await supabase
-        .from("portfolio_holdings")
-        .select("symbol, quantity, avg_buy_price")
-        .eq("user_id", user.id);
-
-      if (holdingsError) {
-        return NextResponse.json(
-          { error: "Failed to fetch holdings" },
-          { status: 500 }
+        const excelData = await generateStockExcelData(stockSymbols, aiInsights);
+        const excelBuffer = generateExcelReport(
+          excelData,
+          `Daily Stock Report - ${now.toDateString()}`
         );
+        const emailSent = await sendDailyBriefEmail(schedule.email, aiSummary, excelBuffer);
+
+        if (emailSent) {
+          sent++;
+          await adminSupabase
+            .from("scheduled_reports")
+            .update({ last_sent_at: new Date().toISOString() })
+            .eq("id", schedule.id);
+          console.log(
+            `Successfully sent daily brief to ${schedule.email} for ${stockSymbols.length} stocks`
+          );
+        } else {
+          failed++;
+          console.error(`Failed to send email to ${schedule.email}`);
+        }
+      } catch (err) {
+        failed++;
+        console.error(`Failed to process scheduled report for user ${schedule.user_id}:`, err);
       }
-
-      if (!holdings || holdings.length === 0) {
-        return NextResponse.json(
-          { error: "No portfolio holdings found. Add stocks to your portfolio first." },
-          { status: 400 }
-        );
-      }
-
-      const result = await generateBriefForUser(user.id, holdings);
-
-      if (!result) {
-        return NextResponse.json(
-          { error: "Failed to generate brief" },
-          { status: 500 }
-        );
-      }
-
-      // Save to database
-      const { data: brief, error: insertError } = await supabase
-        .from("daily_briefs")
-        .insert({
-          user_id: user.id,
-          content: result.content,
-          portfolio_snapshot: result.snapshot as unknown as Record<string, unknown>,
-        })
-        .select("*")
-        .single();
-
-      if (insertError || !brief) {
-        return NextResponse.json(
-          { error: "Failed to save daily brief" },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ brief, mode: "on-demand" }, { status: 201 });
     }
+
+    return NextResponse.json({
+      success: true,
+      due,
+      processed,
+      sent,
+      failed,
+      skipped,
+      totalSchedules: schedules.length,
+      checkedAt: now.toISOString(),
+    });
+  } catch (error) {
+    console.error("processScheduledReports error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/daily-brief - Generate a new daily brief.
+ * Can be triggered by:
+ *   1. Authenticated user (generates for their portfolio)
+ *   2. Cron job with CRON_SECRET header (generates for all users with portfolios)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    if (isCronAuthorized(request)) {
+      return processScheduledReports();
+    }
+
+    // User mode: generate brief for authenticated user
+    const supabase = await createClient();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Fetch user's holdings
+    const { data: holdings, error: holdingsError } = await supabase
+      .from("portfolio_holdings")
+      .select("symbol, quantity, avg_buy_price")
+      .eq("user_id", user.id);
+
+    if (holdingsError) {
+      return NextResponse.json(
+        { error: "Failed to fetch holdings" },
+        { status: 500 }
+      );
+    }
+
+    if (!holdings || holdings.length === 0) {
+      return NextResponse.json(
+        { error: "No portfolio holdings found. Add stocks to your portfolio first." },
+        { status: 400 }
+      );
+    }
+
+    const result = await generateBriefForUser(user.id, holdings);
+
+    if (!result) {
+      return NextResponse.json(
+        { error: "Failed to generate brief" },
+        { status: 500 }
+      );
+    }
+
+    // Save to database
+    const { data: brief, error: insertError } = await supabase
+      .from("daily_briefs")
+      .insert({
+        user_id: user.id,
+        content: result.content,
+        portfolio_snapshot: result.snapshot as unknown as Record<string, unknown>,
+      })
+      .select("*")
+      .single();
+
+    if (insertError || !brief) {
+      return NextResponse.json(
+        { error: "Failed to save daily brief" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ brief, mode: "on-demand" }, { status: 201 });
   } catch (error) {
     console.error("POST /api/daily-brief error:", error);
     return NextResponse.json(
