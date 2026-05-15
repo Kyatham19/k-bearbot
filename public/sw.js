@@ -1,14 +1,13 @@
-const CACHE_NAME = 'alphasight-v1';
-const STATIC_CACHE = 'alphasight-static-v1';
-const DYNAMIC_CACHE = 'alphasight-dynamic-v1';
+const CACHE_NAME = 'alphasight-v2';
+const STATIC_CACHE = 'alphasight-static-v2';
+const DYNAMIC_CACHE = 'alphasight-dynamic-v2';
 
 // Files to cache immediately
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/apple-touch-icon.png',
+  '/icon-192.svg',
+  '/icon-512.svg',
+  '/apple-touch-icon.svg',
   '/favicon.ico'
 ];
 
@@ -50,37 +49,19 @@ self.addEventListener('fetch', (event) => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
-  // Handle API requests differently - network first with cache fallback
-  if (event.request.url.includes('/api/')) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          // Clone the response for caching
-          const responseClone = response.clone();
+  const url = new URL(event.request.url);
 
-          // Cache successful API responses (except auth-related)
-          if (response.status === 200 && !event.request.url.includes('/auth/')) {
-            caches.open(DYNAMIC_CACHE)
-              .then((cache) => {
-                // Cache with timestamp for cache invalidation
-                const cacheResponse = new Response(responseClone.body, {
-                  status: responseClone.status,
-                  statusText: responseClone.statusText,
-                  headers: {
-                    ...Object.fromEntries(responseClone.headers.entries()),
-                    'sw-cache-time': Date.now().toString()
-                  }
-                });
-                cache.put(event.request, cacheResponse);
-              });
-          }
-          return response;
-        })
-        .catch(() => {
-          // Fallback to cache for API requests
-          return caches.match(event.request);
-        })
-    );
+  if (url.origin !== self.location.origin) return;
+
+  // Chat, auth, RSC navigation, and API responses must never be served from a
+  // service-worker cache. Stale cached messages can drop sources/progress on
+  // the first chat after navigation.
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/auth/') ||
+    url.pathname.startsWith('/_next/') ||
+    event.request.mode === 'navigate'
+  ) {
     return;
   }
 

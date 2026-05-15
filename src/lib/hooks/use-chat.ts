@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAppStore, type ChatMessage } from '@/stores/app-store';
 import { generateId } from '@/lib/utils';
 import { useAIProgress } from '@/lib/hooks/use-ai-progress';
@@ -26,7 +25,6 @@ function hasVisibleText(value: string): boolean {
 }
 
 export function useChat() {
-  const router = useRouter();
   const {
     activeConversationId,
     messages,
@@ -175,6 +173,7 @@ export function useChat() {
 
         const newConvId = res.headers.get('x-conversation-id');
         const effectiveConversationId = newConvId || activeConversationId;
+        let shouldReplaceUrlAfterStream = false;
         if (newConvId && !activeConversationId) {
           // Stamp local messages with the new conversation_id FIRST so the
           // providers' loadMessages guard (which filters by conversation_id)
@@ -190,7 +189,7 @@ export function useChat() {
           });
           setActiveConversation(newConvId);
           setActiveView('chat');
-          router.replace(`/chat/${newConvId}`);
+          shouldReplaceUrlAfterStream = true;
         }
 
         const reader = res.body?.getReader();
@@ -359,6 +358,10 @@ export function useChat() {
             }
           }
         }
+
+        if (shouldReplaceUrlAfterStream && effectiveConversationId) {
+          window.history.replaceState(null, '', `/chat/${effectiveConversationId}`);
+        }
       } catch (err: unknown) {
         console.error('CHAT ERROR:', err);
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -399,7 +402,6 @@ export function useChat() {
       startStep,
       updateProgress,
       finishAll,
-      router,
     ],
   );
 

@@ -76,10 +76,7 @@ if ('serviceWorker' in navigator) {
           if (newWorker) {
             newWorker.addEventListener('statechange', function() {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                // New content is available, notify user
-                if (confirm('New version available! Reload to update?')) {
-                  window.location.reload();
-                }
+                console.log('[PWA] New version installed; it will be used on the next page load.');
               }
             });
           }

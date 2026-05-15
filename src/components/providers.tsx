@@ -128,11 +128,23 @@ export function Providers({ children }: ProvidersProps) {
                     ).news
                   : undefined;
               const newsData = Array.isArray(rawNews) ? rawNews : undefined;
+              const rawSources =
+                message.metadata &&
+                typeof message.metadata === 'object' &&
+                !Array.isArray(message.metadata)
+                  ? (
+                      message.metadata as {
+                        sources?: unknown;
+                      }
+                    ).sources
+                  : undefined;
+              const sources = Array.isArray(rawSources) ? rawSources : undefined;
 
               return {
                 ...message,
                 ...(stockData ? { stockData: stockData as ChatMessage['stockData'] } : {}),
                 ...(newsData ? { newsData: newsData as ChatMessage['newsData'] } : {}),
+                ...(sources ? { sources: sources as ChatMessage['sources'] } : {}),
               };
             }
           );

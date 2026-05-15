@@ -36,7 +36,20 @@
       "Bash(awk -F= '{print $1, \\(length\\($2\\) > 0 ? \"SET\" : \"EMPTY\"\\)}')",
       "Bash(awk -F= '{print $1 \"=[\" length\\($2\\) \" chars]\"}')",
       "Bash(awk -F= '{print $1, \\(length\\($2\\) > 0 ? \"SET \\(\" length\\($2\\) \" chars\\)\" : \"EMPTY\"\\)}')",
-      "Bash(openssl rand *)"
+      "Bash(openssl rand *)",
+      "Bash(kill 78349)",
+      "Bash(lsof -i:3000 -t)",
+      "Bash(echo \"pid=$!\")",
+      "Bash(curl *)",
+      "Skill(caveman)",
+      "Bash(awk -F= '{print substr\\($2, 1, 30\\) \"...\"}')",
+      "Bash(awk -F= '{print $1 \"=\" substr\\($2, 1, 30\\) \"...\"}')",
+      "Bash(git ls-remote *)",
+      "Bash(gh release *)",
+      "Bash(git tag *)",
+      "Bash(vercel --version)",
+      "Bash(gh api *)",
+      "WebFetch(domain:vercel.link)"
     ]
   },
   "enableAllProjectMcpServers": true,
