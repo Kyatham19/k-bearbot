@@ -356,11 +356,12 @@ export async function POST(request: NextRequest) {
           const userScheduledTime = new Date(userTime);
           userScheduledTime.setHours(scheduledHour, scheduledMinute, 0, 0);
 
-          // Check if current UTC time is within 30 minutes of when this user's schedule should run
+          // Check if current UTC time is within 90 minutes of when this user's schedule should run.
+          // Wide window because Vercel Hobby cron has ±59 min precision and only fires once/day.
           const timeDiff = Math.abs(now.getTime() - userScheduledTime.getTime());
-          const thirtyMinutes = 30 * 60 * 1000; // 30 minutes in milliseconds
+          const ninetyMinutes = 90 * 60 * 1000;
 
-          if (timeDiff > thirtyMinutes) {
+          if (timeDiff > ninetyMinutes) {
             continue; // Not time for this user yet
           }
 
