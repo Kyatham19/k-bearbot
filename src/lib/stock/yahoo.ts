@@ -211,11 +211,21 @@ export const yahoo = {
     });
     const url = `https://query2.finance.yahoo.com/v1/finance/search?${params}`;
 
-    const res = await fetch(url, { headers: { "User-Agent": UA } });
-    if (!res.ok) {
-      throw new Error(`Yahoo search API ${res.status}`);
-    }
+    try {
+      const res = await fetch(url, { headers: { "User-Agent": UA } });
+      if (!res.ok) {
+        throw new Error(`Yahoo search API ${res.status}`);
+      }
 
-    return await res.json();
+      const data = await res.json();
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid response from Yahoo search API");
+      }
+
+      return data as YahooSearchResult;
+    } catch (error) {
+      console.error("[yahoo.search] Failed:", (error as Error).message);
+      return { quotes: [], news: [] };
+    }
   },
 };
