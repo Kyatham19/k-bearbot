@@ -9,6 +9,15 @@ import { useAIProgress } from '@/lib/hooks/use-ai-progress';
 const EMPTY_RESPONSE_FALLBACK =
   'Unable to generate analysis right now. Showing available data below.';
 
+const AI_PROGRESS_FRAME_PREFIX = '\u001eALPHASIGHT_PROGRESS:';
+const AI_PROGRESS_FRAME_SUFFIX = '\u001e';
+
+type AIProgressFrame = {
+  label?: string;
+  progress?: number;
+  status?: 'active' | 'complete';
+};
+
 function hasVisibleText(value: string): boolean {
   return value
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
@@ -33,7 +42,7 @@ export function useChat() {
     setMessages,
   } = useAppStore();
 
-  const { beginTask, updateProgress, endTask } = useAIProgress();
+  const { startStep, updateProgress, finishAll } = useAIProgress();
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -62,8 +71,7 @@ export function useChat() {
       addMessage(userMsg);
       addMessage(assistantMsg);
       setIsStreaming(true);
-      beginTask('Fetching stock data...');
-      updateProgress(10);
+      startStep('Sending request to AlphaSight...', 3);
        
       console.debug('[useChat] sendMessage:start', {
         activeConversationId,
@@ -120,6 +128,7 @@ export function useChat() {
             isStreaming: false,
             content: hasVisibleText(text) ? text : EMPTY_RESPONSE_FALLBACK,
           });
+          finishAll();
           streamingDone = true;
           clearTimeout(timeoutId);
           console.debug('[useChat] sendMessage:json-response-applied', {
@@ -141,6 +150,7 @@ export function useChat() {
             isStreaming: false,
             content: friendlyMessage,
           });
+          finishAll();
           streamingDone = true;
           clearTimeout(timeoutId);
           console.error('[useChat] sendMessage:non-ok', {
@@ -161,9 +171,6 @@ export function useChat() {
             exchange: stockExchange,
           } as NonNullable<ChatMessage['stockData']>[number];
           updateMessage(assistantMsg.id, { stockData: [placeholder] });
-          endTask();
-          beginTask('Analyzing technical indicators...');
-          updateProgress(35);
         }
 
         const newConvId = res.headers.get('x-conversation-id');
@@ -200,11 +207,60 @@ export function useChat() {
         let done = false;
         let collectedAny = false;
         let fullAssistantText = '';
+        let progressBuffer = '';
 
         let firstChunkLogged = false;
-        endTask();
-        beginTask('Building investment thesis...');
-        updateProgress(60);
+
+        const handleProgressFrame = (frame: AIProgressFrame) => {
+          if (frame.status === 'complete') {
+            finishAll();
+            return;
+          }
+          if (frame.label) {
+            startStep(frame.label, frame.progress);
+          } else if (typeof frame.progress === 'number') {
+            updateProgress(frame.progress);
+          }
+        };
+
+        const consumeProgressFrames = (input: string, flush = false) => {
+          progressBuffer += input;
+          let visible = '';
+
+          while (true) {
+            const start = progressBuffer.indexOf(AI_PROGRESS_FRAME_PREFIX);
+            if (start === -1) {
+              const keep = flush ? 0 : Math.max(AI_PROGRESS_FRAME_PREFIX.length - 1, 0);
+              if (progressBuffer.length > keep) {
+                visible += progressBuffer.slice(0, progressBuffer.length - keep);
+                progressBuffer = progressBuffer.slice(progressBuffer.length - keep);
+              }
+              break;
+            }
+
+            visible += progressBuffer.slice(0, start);
+            const jsonStart = start + AI_PROGRESS_FRAME_PREFIX.length;
+            const end = progressBuffer.indexOf(AI_PROGRESS_FRAME_SUFFIX, jsonStart);
+            if (end === -1) {
+              progressBuffer = progressBuffer.slice(start);
+              break;
+            }
+
+            const raw = progressBuffer.slice(jsonStart, end);
+            progressBuffer = progressBuffer.slice(end + AI_PROGRESS_FRAME_SUFFIX.length);
+            try {
+              handleProgressFrame(JSON.parse(raw) as AIProgressFrame);
+            } catch {
+              // Ignore malformed progress metadata and keep the chat stream alive.
+            }
+          }
+
+          if (flush && progressBuffer) {
+            visible += progressBuffer;
+            progressBuffer = '';
+          }
+          return visible;
+        };
         
         while (!done) {
           let readResult: ReadableStreamReadResult<Uint8Array>;
@@ -222,17 +278,12 @@ export function useChat() {
           const { value, done: readerDone } = readResult;
           done = readerDone;
           if (value) {
-            const text = decoder.decode(value, { stream: true });
+            const text = consumeProgressFrames(decoder.decode(value, { stream: true }));
             if (text.length > 0) {
               fullAssistantText += text;
               if (hasVisibleText(text)) collectedAny = true;
-              // Progress update every chunk
-              updateProgress(Math.min(60 + (fullAssistantText.length / 100) * 30, 90));
               if (!firstChunkLogged) {
                 firstChunkLogged = true;
-                endTask();
-                beginTask('Generating response...');
-                updateProgress(75);
                 console.debug('[useChat] first-chunk', {
                   preview: text.slice(0, 120),
                   length: text.length,
@@ -241,6 +292,12 @@ export function useChat() {
             }
             appendToMessage(assistantMsg.id, text);
           }
+        }
+        const tailText = consumeProgressFrames('', true);
+        if (tailText.length > 0) {
+          fullAssistantText += tailText;
+          if (hasVisibleText(tailText)) collectedAny = true;
+          appendToMessage(assistantMsg.id, tailText);
         }
         streamingDone = true;
         clearTimeout(timeoutId);
@@ -324,6 +381,7 @@ export function useChat() {
       } finally {
         clearTimeout(timeoutId);
         setIsStreaming(false);
+        finishAll();
         abortRef.current = null;
       }
     },
@@ -338,6 +396,9 @@ export function useChat() {
       setActiveConversation,
       setActiveView,
       addConversation,
+      startStep,
+      updateProgress,
+      finishAll,
       router,
     ],
   );

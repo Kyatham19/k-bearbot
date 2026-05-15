@@ -20,6 +20,15 @@ import type { StockAnalysis } from "@/types/stock";
 const EMPTY_RESPONSE_FALLBACK =
   "Unable to generate analysis right now. Showing available data below.";
 
+const AI_PROGRESS_FRAME_PREFIX = "\u001eALPHASIGHT_PROGRESS:";
+const AI_PROGRESS_FRAME_SUFFIX = "\u001e";
+
+type AIProgressFrame = {
+  label?: string;
+  progress?: number;
+  status?: "active" | "complete";
+};
+
 const TICKER_PATTERN = /\$([A-Z]{1,10}(?:\.[A-Z]{1,2})?)\b/;
 const NOUN_PHRASE_PATTERN =
   /(?:analyze|analysis\s+of|price\s+of|quote\s+for|stock\s+of)\s+([a-zA-Z0-9.&\-\s]{2,40})/i;
@@ -167,6 +176,12 @@ function hasVisibleText(value: string): boolean {
     .trim().length > 0;
 }
 
+function encodeProgressFrame(frame: AIProgressFrame): Uint8Array {
+  return new TextEncoder().encode(
+    `${AI_PROGRESS_FRAME_PREFIX}${JSON.stringify(frame)}${AI_PROGRESS_FRAME_SUFFIX}`
+  );
+}
+
 function chatJsonResponse(
   text: string,
   status: number,
@@ -186,7 +201,13 @@ function chatJsonResponse(
 
 export async function POST(request: NextRequest) {
   try {
+    const progressEvents: AIProgressFrame[] = [];
+    const recordProgress = (label: string, progress: number) => {
+      progressEvents.push({ label, progress, status: "active" });
+    };
+
     console.debug("[chat-api] request received");
+    recordProgress("Checking your session", 5);
     const supabase = await createClient();
     const {
       data: { user },
@@ -227,6 +248,7 @@ export async function POST(request: NextRequest) {
       hasConversationId: Boolean(requestedConversationId),
     });
 
+    recordProgress("Checking AI provider configuration", 8);
     const aiValidation = validateAiSetup();
     if (!aiValidation.valid) {
       return chatJsonResponse(EMPTY_RESPONSE_FALLBACK, 503, {
@@ -237,6 +259,7 @@ export async function POST(request: NextRequest) {
 
     let activeConversationId = requestedConversationId;
     if (!activeConversationId) {
+      recordProgress("Creating a new conversation", 12);
       const title =
         incomingMessage.length > 60
           ? `${incomingMessage.substring(0, 60)}...`
@@ -254,6 +277,7 @@ export async function POST(request: NextRequest) {
       }
       activeConversationId = conversation.id;
     } else {
+      recordProgress("Verifying conversation access", 12);
       const { data: existing, error } = await supabase
         .from("conversations")
         .select("id")
@@ -267,6 +291,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    recordProgress("Loading conversation history and preferences", 18);
     const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
       supabase
         .from("messages")
@@ -285,6 +310,7 @@ export async function POST(request: NextRequest) {
         .maybeSingle(),
     ]);
 
+    recordProgress("Saving your message", 22);
     // Insert user message after fetching history to avoid duplicating it in the LLM context
     const { error: userMessageError } = await supabase.from("messages").insert({
       conversation_id: activeConversationId,
@@ -301,6 +327,7 @@ export async function POST(request: NextRequest) {
     // Detect and save user memory (e.g., name)
     const nameMatch = incomingMessage.match(/(?:my name is|I am|I'm|call me)\s+([a-zA-Z\s]+)/i);
     if (nameMatch) {
+      recordProgress("Updating user memory", 24);
       const name = nameMatch[1].trim();
       console.log("[chat-api] Saving name:", name);
       const { error } = await supabase
@@ -340,6 +367,7 @@ export async function POST(request: NextRequest) {
     let chatMode: "stock" | "general" = "general";
     let generalKind: "brief" | "normal" = "normal";
 
+    recordProgress("Detecting whether this is a stock or general query", 28);
     // Intent pipeline:
     // 1. Regex (high-confidence stock signals) → stock mode candidate
     // 2. Classifier LLM fallback → stock / greeting / general
@@ -362,6 +390,7 @@ export async function POST(request: NextRequest) {
         console.debug("[chat-api] general shortcut (skip classifier)");
       } else {
         try {
+          recordProgress("Classifying request intent", 31);
           const intent = await withTimeout(
             classifyIntent(incomingMessage),
             3000,
@@ -385,6 +414,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (stockQuery) {
+      recordProgress(`Resolving ticker for "${stockQuery}"`, 35);
       const resolvedSymbol = await withTimeout(resolveSymbol(stockQuery), 8000, "resolveSymbol");
       console.debug("[chat-api] symbol resolution", {
         query: stockQuery,
@@ -398,6 +428,7 @@ export async function POST(request: NextRequest) {
       }
       if (resolvedSymbol) {
         try {
+          recordProgress(`Fetching live quote for ${resolvedSymbol}`, 42);
           const quote = await withTimeout(fetchQuote(resolvedSymbol), 10000, "fetchQuote");
           if (!quote) throw new Error("Quote not found");
 
@@ -407,6 +438,7 @@ export async function POST(request: NextRequest) {
 
           if (isSimpleQuery) {
             console.debug("[chat-api] simple stock query detected, skipping heavy data");
+            recordProgress(`Preparing quote snapshot for ${resolvedSymbol}`, 50);
             // For simple queries, just get quote and minimal data
             stockAnalysis = compactStockAnalysis({
               quote,
@@ -438,11 +470,12 @@ export async function POST(request: NextRequest) {
             console.debug("[chat-api] simple stock analysis ready", { symbol: resolvedSymbol });
           } else {
             // Full analysis for complex queries
-          const [historyResult, companyInfoResult, newsResult] = await Promise.allSettled([
-            withTimeout(fetchHistory(resolvedSymbol, 1), 10000, "fetchHistory"), // Faster timeout
-            withTimeout(fetchCompanyInfo(resolvedSymbol), 10000, "fetchCompanyInfo"), // Faster timeout
-            withTimeout(fetchStockNews(resolvedSymbol), 10000, "fetchStockNews"), // Faster timeout
-          ]);
+            recordProgress(`Fetching history, company profile, and news for ${resolvedSymbol}`, 50);
+            const [historyResult, companyInfoResult, newsResult] = await Promise.allSettled([
+              withTimeout(fetchHistory(resolvedSymbol, 1), 10000, "fetchHistory"), // Faster timeout
+              withTimeout(fetchCompanyInfo(resolvedSymbol), 10000, "fetchCompanyInfo"), // Faster timeout
+              withTimeout(fetchStockNews(resolvedSymbol), 10000, "fetchStockNews"), // Faster timeout
+            ]);
 
             const history = historyResult.status === "fulfilled" ? historyResult.value : [];
             const companyInfo =
@@ -458,6 +491,7 @@ export async function POST(request: NextRequest) {
                   };
             const news = newsResult.status === "fulfilled" ? newsResult.value : [];
 
+            recordProgress(`Calculating technical indicators for ${resolvedSymbol}`, 58);
             stockAnalysis = compactStockAnalysis({
               quote,
               history,
@@ -493,6 +527,7 @@ export async function POST(request: NextRequest) {
     let webSearch: WebSearchResult | null = null;
     if (shouldSearch) {
       try {
+        recordProgress(forceWebSearch ? "Running requested web search" : "Searching recent web/news sources", 64);
         webSearch = await searchWeb(incomingMessage, 5);
         console.debug("[chat-api] web search complete", {
           query: incomingMessage.slice(0, 80),
@@ -511,6 +546,7 @@ export async function POST(request: NextRequest) {
     // Deep research pass for full stock analyses (skipped for simple price-only queries)
     if (chatMode === "stock" && stockAnalysis && stockAnalysis.history.length > 0) {
       try {
+        recordProgress("Running deep research: peers, sector, inputs, macro", 72);
         const research = await withTimeout(runDeepResearch(stockAnalysis), 8000, "deepResearch");
         userMemory += `\n\n${formatResearchBundle(research)}`;
         console.debug("[chat-api] deep research attached", {
@@ -530,6 +566,7 @@ export async function POST(request: NextRequest) {
     let llmStream: ReadableStream<Uint8Array>;
     let usedProvider = "unknown";
     try {
+      recordProgress(`Opening ${chatMode === "stock" ? "stock analysis" : "general chat"} LLM stream`, 80);
       console.debug("[chat-api] opening LLM stream", { mode: chatMode });
       const result = await withTimeout(
         streamChat({
@@ -598,6 +635,17 @@ export async function POST(request: NextRequest) {
 
     const outboundStream = new ReadableStream<Uint8Array>({
       async start(controller) {
+        for (const event of progressEvents) {
+          controller.enqueue(encodeProgressFrame(event));
+        }
+        controller.enqueue(
+          encodeProgressFrame({
+            label: "Streaming response from the LLM",
+            progress: 88,
+            status: "active",
+          })
+        );
+
         const reader = timedStream.getReader();
         let chunkCount = 0;
         try {
@@ -620,15 +668,26 @@ export async function POST(request: NextRequest) {
             chunks.push(EMPTY_RESPONSE_FALLBACK);
             controller.enqueue(encoder.encode(EMPTY_RESPONSE_FALLBACK));
           }
+          controller.enqueue(
+            encodeProgressFrame({
+              label: "Saving assistant response",
+              progress: 96,
+              status: "active",
+            })
+          );
+          await persistAssistantMessage();
+          controller.enqueue(
+            encodeProgressFrame({
+              progress: 100,
+              status: "complete",
+            })
+          );
           controller.close();
           console.debug("[chat-api] stream finished", {
             conversationId,
             chunks: chunkCount,
             totalChars: chunks.join("").length,
           });
-          persistAssistantMessage().catch((error) =>
-            console.error("CHAT ERROR:", error)
-          );
         }
       },
       cancel() {
