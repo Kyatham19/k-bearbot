@@ -32,7 +32,11 @@
       "mcp__supabase__apply_migration",
       "mcp__supabase__execute_sql",
       "Bash(git status *)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(awk -F= '{print $1, \\(length\\($2\\) > 0 ? \"SET\" : \"EMPTY\"\\)}')",
+      "Bash(awk -F= '{print $1 \"=[\" length\\($2\\) \" chars]\"}')",
+      "Bash(awk -F= '{print $1, \\(length\\($2\\) > 0 ? \"SET \\(\" length\\($2\\) \" chars\\)\" : \"EMPTY\"\\)}')",
+      "Bash(openssl rand *)"
     ]
   },
   "enableAllProjectMcpServers": true,

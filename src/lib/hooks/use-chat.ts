@@ -4,6 +4,7 @@ import { useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore, type ChatMessage } from '@/stores/app-store';
 import { generateId } from '@/lib/utils';
+import { useAIProgress } from '@/lib/hooks/use-ai-progress';
 
 const EMPTY_RESPONSE_FALLBACK =
   'Unable to generate analysis right now. Showing available data below.';
@@ -32,6 +33,7 @@ export function useChat() {
     setMessages,
   } = useAppStore();
 
+  const { beginTask, updateProgress, endTask } = useAIProgress();
   const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(
@@ -60,6 +62,9 @@ export function useChat() {
       addMessage(userMsg);
       addMessage(assistantMsg);
       setIsStreaming(true);
+      beginTask('Fetching stock data...');
+      updateProgress(10);
+       
       console.debug('[useChat] sendMessage:start', {
         activeConversationId,
         messageLength: userMsg.content.length,
@@ -156,6 +161,9 @@ export function useChat() {
             exchange: stockExchange,
           } as NonNullable<ChatMessage['stockData']>[number];
           updateMessage(assistantMsg.id, { stockData: [placeholder] });
+          endTask();
+          beginTask('Analyzing technical indicators...');
+          updateProgress(35);
         }
 
         const newConvId = res.headers.get('x-conversation-id');
@@ -194,6 +202,10 @@ export function useChat() {
         let fullAssistantText = '';
 
         let firstChunkLogged = false;
+        endTask();
+        beginTask('Building investment thesis...');
+        updateProgress(60);
+        
         while (!done) {
           let readResult: ReadableStreamReadResult<Uint8Array>;
           try {
@@ -214,8 +226,13 @@ export function useChat() {
             if (text.length > 0) {
               fullAssistantText += text;
               if (hasVisibleText(text)) collectedAny = true;
+              // Progress update every chunk
+              updateProgress(Math.min(60 + (fullAssistantText.length / 100) * 30, 90));
               if (!firstChunkLogged) {
                 firstChunkLogged = true;
+                endTask();
+                beginTask('Generating response...');
+                updateProgress(75);
                 console.debug('[useChat] first-chunk', {
                   preview: text.slice(0, 120),
                   length: text.length,

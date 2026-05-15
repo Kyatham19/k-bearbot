@@ -8,6 +8,7 @@ interface EmailConfig {
     user: string;
     pass: string;
   };
+  from: string;
 }
 
 function getEmailConfig(): EmailConfig | null {
@@ -16,8 +17,9 @@ function getEmailConfig(): EmailConfig | null {
   const secure = process.env.SMTP_SECURE === 'true';
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM || user;
 
-  if (!host || !user || !pass) {
+  if (!host || !user || !pass || !from) {
     return null;
   }
 
@@ -25,7 +27,8 @@ function getEmailConfig(): EmailConfig | null {
     host,
     port,
     secure,
-    auth: { user, pass }
+    auth: { user, pass },
+    from,
   };
 }
 
@@ -43,14 +46,19 @@ export async function sendEmailWithAttachment(
     return false;
   }
 
-  const transporter = nodemailer.createTransport(config);
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: config.auth,
+  });
 
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const info = await transporter.sendMail({
-        from: `"AlphaSight AI" <${config.auth.user}>`,
+        from: `"AlphaSight AI" <${config.from}>`,
         to,
         subject,
         text,

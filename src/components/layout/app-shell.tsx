@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Header } from '@/components/layout/header';
 import { MarketStreamBar } from '@/components/market-stream/market-stream-bar';
+import { AIProgressIndicator } from '@/components/ai/ai-progress-indicator';
 import { useAppStore } from '@/stores/app-store';
 
 interface AppShellProps {
@@ -41,6 +42,9 @@ export function AppShell({ children }: AppShellProps) {
         {showMarketStream && <MarketStreamBar />}
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
+
+      {/* AI Progress Indicator */}
+      <AIProgressIndicator />
     </div>
   );
 }
