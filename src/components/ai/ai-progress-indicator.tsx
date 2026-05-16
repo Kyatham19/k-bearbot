@@ -30,7 +30,11 @@ export function AIProgressIndicator() {
     if (activeTask) {
       items.push(activeTask.name.endsWith('...') ? activeTask.name : `${activeTask.name}...`);
     }
-    if (lastSourceDomain) {
+    if (searchSources.length > 0) {
+      for (const source of searchSources.slice(-4)) {
+        items.push(`Checking ${source.domain}...`);
+      }
+    } else if (lastSourceDomain) {
       items.push(`Checking ${lastSourceDomain}...`);
     }
     if (items.length === 0 && completedTasks.length > 0) {
@@ -40,7 +44,7 @@ export function AIProgressIndicator() {
       items.push('Building response...');
     }
     return [...new Set(items)];
-  }, [activeTask, completedTasks.length, lastSourceDomain]);
+  }, [activeTask, completedTasks.length, lastSourceDomain, searchSources]);
 
   useEffect(() => {
     setRotationIndex(0);
