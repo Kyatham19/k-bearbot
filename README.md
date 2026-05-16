@@ -195,8 +195,82 @@ The UI is configured for **text-first outputs** (no forced chart/news card clutt
 
 ---
 
+## Recent Updates
+
+### ✨ Latest Commits
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║                      Last 5 Commits                           ║
+╠════════════════════════════════════════════════════════════════╣
+║ 5022c2c  Fix scheduled daily brief cron processing            ║
+║ 9bae401  Fix first chat rendering and stale cache issues      ║
+║ 581be66  fix(cron): revert to daily schedule for Vercel       ║
+║ dd64348  chore: bump version to 1.1.0                         ║
+║ 01ca66b  Make AI progress indicator reflect real chat steps   ║
+╚════════════════════════════════════════════════════════════════╝
+```
+
+**To see full commit history:** `git log --oneline -20`
+
+### Recently Added Features
+
+- **Scheduled Daily Brief Automation** – Cron-triggered daily market summaries sent to users at 9 AM IST with portfolio performance and market pulse.
+- **Real-Time Portfolio & Watchlist Streaming** – Live market data updates with global market stream integration for instant portfolio/watchlist movement tracking.
+- **Premium AI Progress Indicator** – Visual feedback during AI response generation showing real chat processing steps for improved UX transparency.
+- **Cron-Based Email Delivery** – Hourly and daily cron automation for scheduled brief emails with Vercel Hobby tier support.
+- **Phone Number Authentication** – OTP verification via SMS (Twilio) for additional auth pathway alongside email-based signup.
+- **Comprehensive Portfolio & Settings Pages** – Full-featured portfolio management, watchlist tracking, and user settings dashboard.
+- **Indian User Optimizations** – Time zone awareness (IST), localized market insights, and culturally relevant daily brief formatting.
+- **PWA Install Button** – Mobile-optimized Progressive Web App install prompt in header for improved accessibility.
+- **Live Global Market Stream** – Real-time market data updates across all client connections using WebSocket-style polling.
+- **Robust Error Handling** – Enhanced error recovery and retry logic for market data fetches and AI provider failures.
+- **Improved Chat Streaming** – Optimized text-first streaming responses with proper caching and history deduplication.
+
+---
+
+## Feature Roadmap
+
+### In Progress 🚀
+- Advanced portfolio analytics (volatility tracking, sector breakdown)
+- ML-based price prediction alerts
+- Social trading features (share strategies, follow traders)
+- Multi-asset class support (crypto, forex, commodities)
+
+### Planned 📋
+- Custom notification preferences
+- Advanced charting and technical analysis tools
+- Integration with trading platforms for direct execution
+- Collaborative portfolio management
+- European/US market time zone support
+- Historical performance tracking and reporting
+
+---
+
+## Contributing
+
+We welcome contributions! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature`
+3. Commit your changes: `git commit -m "feat: description"`
+4. Push to the branch: `git push origin feature/your-feature`
+5. Open a Pull Request
+
+---
+
+## Support & Feedback
+
+- 📧 Email: support@alphasight.ai
+- 🐛 Report bugs: [GitHub Issues](https://github.com/Eshwar02/bearbot/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/Eshwar02/bearbot/discussions)
+
+---
+
 ## Status
 
 - Local TypeScript check: passing (`npx tsc --noEmit`).
 - Active AI provider: Mistral.
 - Branding updated to custom AlphaSight logo.
+- Current version: 1.1.0
+- Deployment target: Vercel
