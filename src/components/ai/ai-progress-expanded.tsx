@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AITask } from '@/stores/ai-progress-store';
+import { AISearchSource, AITask } from '@/stores/ai-progress-store';
 
 interface ExpandedProps {
   tasks: AITask[];
   activeTask: AITask | null;
+  sources: AISearchSource[];
+  lastSourceDomain: string | null;
 }
 
-export function AIProgressExpanded({ tasks, activeTask }: ExpandedProps) {
+export function AIProgressExpanded({ tasks, activeTask, sources, lastSourceDomain }: ExpandedProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
   // Update elapsed time for active task
@@ -17,7 +19,7 @@ export function AIProgressExpanded({ tasks, activeTask }: ExpandedProps) {
 
     const interval = setInterval(() => {
       setElapsedTime((Date.now() - activeTask.startTime) / 1000);
-    }, 100);
+    }, 120);
 
     return () => clearInterval(interval);
   }, [activeTask]);
@@ -30,24 +32,26 @@ export function AIProgressExpanded({ tasks, activeTask }: ExpandedProps) {
     return `${minutes}m ${secs}s`;
   };
 
+  const visibleSources = sources.slice(0, 8);
+  const hiddenSourcesCount = Math.max(0, sources.length - visibleSources.length);
+
   return (
-    <div className="space-y-0 px-4 py-3">
-      {/* Completed tasks section */}
+    <div className="space-y-2 px-4 py-3">
       {tasks.length > 0 && (
-        <div className="space-y-1.5 pb-2">
+        <div className="space-y-1.5">
           {tasks.map((task, idx) => (
             <div
               key={task.id}
-              className="flex items-center justify-between gap-2 group animate-in fade-in slide-in-from-bottom-2 duration-300"
-              style={{ animationDelay: `${idx * 50}ms` }}
+              className="group flex items-center justify-between gap-2 transition-opacity duration-200"
+              style={{ opacity: 0.78 - Math.min(idx * 0.05, 0.2) }}
             >
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="min-w-0 flex items-center gap-2.5">
                 <span className="text-teal-400 text-xs font-semibold flex-shrink-0">✓</span>
-                <span className="text-xs text-white/70 font-medium truncate group-hover:text-white/85 transition-colors">
+                <span className="truncate text-xs font-medium text-white/72 transition-colors duration-200 group-hover:text-white/86">
                   {task.name}
                 </span>
               </div>
-              <span className="text-xs text-white/40 flex-shrink-0 tabular-nums">
+              <span className="flex-shrink-0 tabular-nums text-xs text-white/42">
                 {task.duration ? formatTime(task.duration) : '—'}
               </span>
             </div>
@@ -55,25 +59,46 @@ export function AIProgressExpanded({ tasks, activeTask }: ExpandedProps) {
         </div>
       )}
 
-      {/* Separator */}
       {tasks.length > 0 && activeTask && (
-        <div className="h-px bg-gradient-to-r from-white/5 via-white/10 to-transparent my-1.5" />
+        <div className="my-1 h-px bg-gradient-to-r from-white/5 via-white/12 to-transparent" />
       )}
 
-      {/* Active task */}
       {activeTask && (
-        <div className="flex items-center justify-between gap-2 animate-pulse">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center justify-between gap-2 transition-opacity duration-300">
+          <div className="min-w-0 flex items-center gap-2.5">
             <div className="relative flex-shrink-0">
-              <div className="w-1.5 h-1.5 bg-teal-400 rounded-full" />
-              <div className="absolute inset-0 w-1.5 h-1.5 bg-teal-400 rounded-full animate-pulse" />
+              <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+              <div className="absolute inset-0 h-1.5 w-1.5 rounded-full bg-teal-400 animate-pulse" />
             </div>
-            <span className="text-xs text-white/85 font-medium truncate">{activeTask.name}</span>
+            <span className="truncate text-xs font-medium text-white/86">{activeTask.name}</span>
           </div>
-          <span className="text-xs text-white/40 flex-shrink-0 tabular-nums">
+          <span className="flex-shrink-0 tabular-nums text-xs text-white/42">
             {formatTime(elapsedTime)}
           </span>
         </div>
+      )}
+
+      {visibleSources.length > 0 && (
+        <>
+          <div className="my-1 h-px bg-gradient-to-r from-white/5 via-white/10 to-transparent" />
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium tracking-wide text-white/48">Sources searched</div>
+            <div className="space-y-0.5">
+              {visibleSources.map((source) => (
+                <div
+                  key={source.domain}
+                  className="animate-in fade-in text-xs duration-300 transition-opacity ease-out"
+                  style={{ opacity: source.domain === lastSourceDomain ? 0.9 : 0.6 }}
+                >
+                  {source.domain}
+                </div>
+              ))}
+              {hiddenSourcesCount > 0 && (
+                <div className="text-xs text-white/48">+{hiddenSourcesCount} more</div>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore, type ChatMessage } from '@/stores/app-store';
 import { generateId } from '@/lib/utils';
 import { useAIProgress } from '@/lib/hooks/use-ai-progress';
@@ -12,9 +12,14 @@ const AI_PROGRESS_FRAME_PREFIX = '\u001eALPHASIGHT_PROGRESS:';
 const AI_PROGRESS_FRAME_SUFFIX = '\u001e';
 
 type AIProgressFrame = {
+  type?: 'progress' | 'search_source' | 'phase_update' | 'task_complete';
   label?: string;
   progress?: number;
   status?: 'active' | 'complete';
+  phase?: 'planning' | 'searching' | 'analyzing' | 'synthesizing' | 'finalizing';
+  domain?: string;
+  title?: string;
+  timestamp?: number;
 };
 
 function hasVisibleText(value: string): boolean {
@@ -40,8 +45,70 @@ export function useChat() {
     setMessages,
   } = useAppStore();
 
-  const { startStep, updateProgress, finishAll } = useAIProgress();
+  const { startStep, updateProgress, finishAll, updatePhase, trackSearchSource, completeCurrentTask } =
+    useAIProgress();
   const abortRef = useRef<AbortController | null>(null);
+  const frameBatchRef = useRef<AIProgressFrame[]>([]);
+  const frameFlushTimerRef = useRef<number | null>(null);
+
+  const flushProgressFrames = useCallback(() => {
+    if (frameFlushTimerRef.current !== null) {
+      window.clearTimeout(frameFlushTimerRef.current);
+      frameFlushTimerRef.current = null;
+    }
+    const batch = frameBatchRef.current.splice(0, frameBatchRef.current.length);
+    if (batch.length === 0) return;
+
+    const latestProgress = [...batch].reverse().find((f) => !f.type || f.type === 'progress');
+    const latestPhase = [...batch].reverse().find((f) => f.type === 'phase_update' && f.phase);
+    const hasTaskComplete = batch.some((f) => f.type === 'task_complete');
+
+    batch.forEach((frame) => {
+      if (frame.type === 'search_source' && frame.domain && frame.title) {
+        trackSearchSource({
+          domain: frame.domain,
+          title: frame.title,
+          timestamp: frame.timestamp,
+        });
+      }
+    });
+
+    if (latestPhase?.phase) {
+      updatePhase(latestPhase.phase, latestPhase.label);
+    } else if (latestProgress?.label) {
+      startStep(latestProgress.label, latestProgress.progress);
+    } else if (typeof latestProgress?.progress === 'number') {
+      updateProgress(latestProgress.progress);
+    }
+
+    if (latestProgress?.status === 'complete') {
+      finishAll();
+      return;
+    }
+
+    if (hasTaskComplete) {
+      completeCurrentTask();
+    }
+  }, [completeCurrentTask, finishAll, startStep, trackSearchSource, updatePhase, updateProgress]);
+
+  const enqueueProgressFrame = useCallback((frame: AIProgressFrame) => {
+    frameBatchRef.current.push(frame);
+    if (frameFlushTimerRef.current !== null) return;
+    frameFlushTimerRef.current = window.setTimeout(() => {
+      flushProgressFrames();
+    }, 90);
+  }, [flushProgressFrames]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      if (frameFlushTimerRef.current !== null) {
+        window.clearTimeout(frameFlushTimerRef.current);
+        frameFlushTimerRef.current = null;
+      }
+      frameBatchRef.current = [];
+    };
+  }, []);
 
   const sendMessage = useCallback(
     async (content: string, opts?: { forceWebSearch?: boolean }) => {
@@ -69,7 +136,8 @@ export function useChat() {
       addMessage(userMsg);
       addMessage(assistantMsg);
       setIsStreaming(true);
-      startStep('Sending request to AlphaSight...', 3);
+      updatePhase('planning', 'Planning request');
+      startStep('Sending request to AlphaSight...', 6);
        
       console.debug('[useChat] sendMessage:start', {
         activeConversationId,
@@ -211,15 +279,7 @@ export function useChat() {
         let firstChunkLogged = false;
 
         const handleProgressFrame = (frame: AIProgressFrame) => {
-          if (frame.status === 'complete') {
-            finishAll();
-            return;
-          }
-          if (frame.label) {
-            startStep(frame.label, frame.progress);
-          } else if (typeof frame.progress === 'number') {
-            updateProgress(frame.progress);
-          }
+          enqueueProgressFrame(frame);
         };
 
         const consumeProgressFrames = (input: string, flush = false) => {
@@ -293,6 +353,7 @@ export function useChat() {
           }
         }
         const tailText = consumeProgressFrames('', true);
+        flushProgressFrames();
         if (tailText.length > 0) {
           fullAssistantText += tailText;
           if (hasVisibleText(tailText)) collectedAny = true;
@@ -384,6 +445,7 @@ export function useChat() {
       } finally {
         clearTimeout(timeoutId);
         setIsStreaming(false);
+        flushProgressFrames();
         finishAll();
         abortRef.current = null;
       }
@@ -400,8 +462,10 @@ export function useChat() {
       setActiveView,
       addConversation,
       startStep,
-      updateProgress,
       finishAll,
+      updatePhase,
+      enqueueProgressFrame,
+      flushProgressFrames,
     ],
   );
 

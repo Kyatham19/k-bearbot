@@ -10,8 +10,12 @@ describe('AIProgressIndicator', () => {
       completedTasks: [],
       pendingTasks: [],
       progressPercentage: 0,
+      phase: null,
+      searchSources: [],
+      lastSourceDomain: null,
       isExpanded: false,
       autoCollapseTimer: null,
+      hideTimer: null,
     });
   });
 

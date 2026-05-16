@@ -22,7 +22,7 @@ export function validateSerpApiSetup(): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-function hostnameOf(url: string): string {
+export function normalizeSourceDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
@@ -74,7 +74,7 @@ async function searchTavily(query: string, numResults: number): Promise<WebSourc
     return results.slice(0, numResults).map((r) => ({
       title: r.title,
       url: r.url,
-      source: hostnameOf(r.url),
+      source: normalizeSourceDomain(r.url),
       snippet: r.content,
       publishedAt: r.published_date,
     }));

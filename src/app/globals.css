@@ -193,6 +193,15 @@ body {
     }
   }
 
+  @keyframes ai-progress-shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
   /* Gradient text helper */
   .gradient-text {
     @apply bg-gradient-to-r from-accent-green to-accent-blue bg-clip-text text-transparent;

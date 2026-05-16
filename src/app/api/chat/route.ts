@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { classifyIntent, streamChat, validateAiSetup } from "@/lib/ai";
-import { searchWeb, validateSerpApiSetup, type WebSearchResult } from "@/lib/ai/web-search";
+import {
+  searchWeb,
+  validateSerpApiSetup,
+  normalizeSourceDomain,
+  type WebSearchResult,
+} from "@/lib/ai/web-search";
 import { buildUserContext } from "@/lib/ai/user-context";
 import {
   searchMemories,
@@ -29,9 +34,14 @@ const AI_PROGRESS_FRAME_PREFIX = "\u001eALPHASIGHT_PROGRESS:";
 const AI_PROGRESS_FRAME_SUFFIX = "\u001e";
 
 type AIProgressFrame = {
+  type?: "progress" | "search_source" | "phase_update" | "task_complete";
   label?: string;
   progress?: number;
   status?: "active" | "complete";
+  phase?: "planning" | "searching" | "analyzing" | "synthesizing" | "finalizing";
+  domain?: string;
+  title?: string;
+  timestamp?: number;
 };
 
 const TICKER_PATTERN = /\$([A-Z]{1,10}(?:\.[A-Z]{1,2})?)\b/;
@@ -207,8 +217,26 @@ function chatJsonResponse(
 export async function POST(request: NextRequest) {
   try {
     const progressEvents: AIProgressFrame[] = [];
+    let hasActiveProgressTask = false;
+    let lastPhase: AIProgressFrame["phase"] | null = null;
+    const inferPhase = (progress: number): NonNullable<AIProgressFrame["phase"]> => {
+      if (progress <= 20) return "planning";
+      if (progress <= 55) return "searching";
+      if (progress <= 75) return "analyzing";
+      if (progress <= 92) return "synthesizing";
+      return "finalizing";
+    };
     const recordProgress = (label: string, progress: number) => {
-      progressEvents.push({ label, progress, status: "active" });
+      const phase = inferPhase(progress);
+      if (hasActiveProgressTask) {
+        progressEvents.push({ type: "task_complete" });
+      }
+      if (phase !== lastPhase) {
+        progressEvents.push({ type: "phase_update", phase, label });
+        lastPhase = phase;
+      }
+      progressEvents.push({ type: "progress", label, progress, status: "active" });
+      hasActiveProgressTask = true;
     };
 
     console.debug("[chat-api] request received");
@@ -542,6 +570,18 @@ export async function POST(request: NextRequest) {
       try {
         recordProgress(forceWebSearch ? "Running requested web search" : "Searching recent web/news sources", 64);
         webSearch = await searchWeb(incomingMessage, 5);
+        const emittedDomains = new Set<string>();
+        for (const source of webSearch.sources) {
+          const domain = normalizeSourceDomain(source.url);
+          if (!domain || emittedDomains.has(domain)) continue;
+          emittedDomains.add(domain);
+          progressEvents.push({
+            type: "search_source",
+            domain,
+            title: source.title,
+            timestamp: source.publishedAt ? Date.parse(source.publishedAt) || Date.now() : Date.now(),
+          });
+        }
         console.debug("[chat-api] web search complete", {
           query: incomingMessage.slice(0, 80),
           sourceCount: webSearch.sources.length,
@@ -663,8 +703,17 @@ export async function POST(request: NextRequest) {
         for (const event of progressEvents) {
           controller.enqueue(encodeProgressFrame(event));
         }
+        controller.enqueue(encodeProgressFrame({ type: "task_complete" }));
         controller.enqueue(
           encodeProgressFrame({
+            type: "phase_update",
+            phase: "synthesizing",
+            label: "Streaming response from the LLM",
+          })
+        );
+        controller.enqueue(
+          encodeProgressFrame({
+            type: "progress",
             label: "Streaming response from the LLM",
             progress: 88,
             status: "active",
@@ -695,6 +744,19 @@ export async function POST(request: NextRequest) {
           }
           controller.enqueue(
             encodeProgressFrame({
+              type: "task_complete",
+            })
+          );
+          controller.enqueue(
+            encodeProgressFrame({
+              type: "phase_update",
+              phase: "finalizing",
+              label: "Saving assistant response",
+            })
+          );
+          controller.enqueue(
+            encodeProgressFrame({
+              type: "progress",
               label: "Saving assistant response",
               progress: 96,
               status: "active",
@@ -703,6 +765,12 @@ export async function POST(request: NextRequest) {
           await persistAssistantMessage();
           controller.enqueue(
             encodeProgressFrame({
+              type: "task_complete",
+            })
+          );
+          controller.enqueue(
+            encodeProgressFrame({
+              type: "progress",
               progress: 100,
               status: "complete",
             })
