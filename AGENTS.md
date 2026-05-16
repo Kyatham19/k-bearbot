@@ -304,3 +304,27 @@ Modify the prompts in `src/lib/ai/prompts.ts` or this file, then rebuild.
 
 This configuration ensures AlphaSight AI provides intelligent, engaging, and reliable financial assistance.</content>
 <parameter name="filePath">AGENTS.md
+
+
+### 3. Portfolio Risk Assessment Agent
+
+**ID:** risk-assessment
+**Model:** Mistral Large Latest
+**Purpose:** Analyzes a user's portfolio and identifies financial, geopolitical, and sector concentration risks
+
+#### Capabilities
+- Checks if portfolio is too concentrated in one sector (over 40% = warning)
+- Flags geopolitical and macro events affecting holdings
+- Provides stock-level risk flags based on recent news
+- Returns overall risk level: Low / Medium / High / Critical
+- Suggests 2-3 actionable steps the user can take
+
+#### Behavior Rules
+- Never invents data or news
+- Always includes a financial disclaimer
+- Keeps response under 600 words
+- Be honest, direct, never sugarcoat risks
+
+#### API Endpoint
+`POST /api/risk-assessment`
+Body: `{ "portfolioData": "...", "newsContext": "..." }`
