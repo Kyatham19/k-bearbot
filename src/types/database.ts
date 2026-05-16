@@ -257,12 +257,61 @@ export type Database = {
         };
         Relationships: [];
       };
+      ai_memories: {
+        Row: {
+          id: string;
+          user_id: string;
+          memory: string;
+          embedding: number[] | null;
+          category: string | null;
+          metadata: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          memory: string;
+          embedding?: number[] | null;
+          category?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          memory?: string;
+          embedding?: number[] | null;
+          category?: string | null;
+          metadata?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      match_ai_memories: {
+        Args: {
+          query_embedding: number[];
+          match_user_id: string;
+          match_count?: number;
+          similarity_threshold?: number;
+        };
+        Returns: Array<{
+          id: string;
+          memory: string;
+          category: string | null;
+          metadata: Json;
+          similarity: number;
+          created_at: string;
+          updated_at: string;
+        }>;
+      };
     };
     Enums: {
       message_role: "user" | "assistant";
@@ -319,3 +368,12 @@ export type ScheduledReportInsert =
   Database["public"]["Tables"]["scheduled_reports"]["Insert"];
 export type ScheduledReportUpdate =
   Database["public"]["Tables"]["scheduled_reports"]["Update"];
+
+export type AiMemoryRow =
+  Database["public"]["Tables"]["ai_memories"]["Row"];
+export type AiMemoryInsert =
+  Database["public"]["Tables"]["ai_memories"]["Insert"];
+export type AiMemoryUpdate =
+  Database["public"]["Tables"]["ai_memories"]["Update"];
+export type AiMemoryMatch =
+  Database["public"]["Functions"]["match_ai_memories"]["Returns"][number];

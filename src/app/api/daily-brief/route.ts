@@ -574,13 +574,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Also store brief into AI memory layer (Supabase memories table). Non-blocking.
-    try {
-      const { upsertMemory } = await import('@/lib/memory/supabase-memory');
-      void upsertMemory({ user_id: user.id, content: result.content, metadata: { source: 'daily_brief', brief_id: brief.id } });
-    } catch (err) {
-      console.warn('Memory upsert failed:', err);
-    }
 
     return NextResponse.json({ brief, mode: "on-demand" }, { status: 201 });
   } catch (error) {
