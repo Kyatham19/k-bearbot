@@ -242,6 +242,41 @@ SUPABASE_SERVICE_ROLE_KEY=your_key
   - Brief: 1500-3000
 - **Streaming:** Enabled for real-time UX
 
+### Memory Subsystem
+
+AlphaSight AI has two layers of user memory; both are RLS-scoped to `auth.uid()` and feed into the `userMemory` system-prompt block.
+
+**1. Structured key/value (`user_memory` table)**
+- Explicit facts: `name`, `risk_tolerance`, etc.
+- Composed in `src/lib/ai/user-context.ts` with portfolio + watchlist.
+- 1200-char cap.
+
+**2. Semantic store (`ai_memories` table, pgvector)**
+- Free-form facts auto-extracted from chat turns ("Prefers dividend stocks", "Long-term investor").
+- 1024-dim embeddings via `mistral-embed`.
+- Top-K cosine retrieval via `match_ai_memories(query_embedding, user_id, count, threshold)` SQL RPC (SECURITY INVOKER — RLS still applies).
+- IVFFlat index (`lists = 100`) on `vector_cosine_ops`.
+
+**Flow per chat turn (`src/app/api/chat/route.ts`):**
+1. Embed latest user message → `searchMemories()` returns top-5 relevant facts (≥ 0.75 similarity).
+2. `formatMemoriesForPrompt()` builds an 800-char block, prepended to `userMemory`.
+3. After stream persist: `addMemories()` runs fire-and-forget — calls `mistral-small-latest` with the existing-memories list and the new turn, parses an `{operations: [{action:"ADD|UPDATE|SKIP", id?, memory?, category?}]}` payload, embeds each new/updated row, upserts. Wrapped in try/catch — never blocks chat.
+
+**Categories** (free-form, one word): `preference`, `risk_profile`, `holding_intent`, `personal`, `goal`, `constraint`.
+
+**Tuning** (`src/lib/ai/config.ts` → `AGENT_CONFIG.memory`):
+- `MEMORY_SEARCH_LIMIT` (default 5)
+- `MEMORY_SIMILARITY_THRESHOLD` (default 0.75)
+- `MEMORY_DEDUPE_THRESHOLD` (default 0.6) — used at extraction time
+- `MEMORY_DEDUPE_LIMIT` (default 10)
+- `MEMORY_PROMPT_CHAR_BUDGET` (default 800)
+- `MEMORY_EXTRACT_TIMEOUT_MS` (default 20000)
+- `MEMORY_EXTRACT_MAX_TOKENS` (default 600)
+
+**No new env vars.** `MISTRAL_API_KEY` is reused for both embeddings and extraction.
+
+**Privacy:** users can list/delete their facts via `GET /api/user/memory` and `DELETE` (existing route). A settings UI for `ai_memories` is a follow-up.
+
 ### Safety & Compliance
 - All recommendations include: "This is not financial advice. Invest at your own risk."
 - No hallucinated data

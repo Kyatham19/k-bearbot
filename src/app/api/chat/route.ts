@@ -1,8 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { classifyIntent, streamChat, validateAiSetup } from "@/lib/ai";
 import { searchWeb, validateSerpApiSetup, type WebSearchResult } from "@/lib/ai/web-search";
 import { buildUserContext } from "@/lib/ai/user-context";
+import {
+  searchMemories,
+  formatMemoriesForPrompt,
+  addMemories,
+} from "@/lib/ai/memory";
 import { detectTanglish } from "@/lib/ai/lang-detect";
 import {
   LANG_INSTRUCTION_TANGLISH,
@@ -292,23 +297,25 @@ export async function POST(request: NextRequest) {
     }
 
     recordProgress("Loading conversation history and preferences", 18);
-    const [historyResponse, userMemoryBase, prefsResponse] = await Promise.all([
-      supabase
-        .from("messages")
-        .select("role, content")
-        .eq("conversation_id", activeConversationId)
-        .order("created_at", { ascending: false })
-        .limit(12),
-      buildUserContext(supabase, user.id).catch((err) => {
-        console.warn("[chat-api] buildUserContext failed", err);
-        return "";
-      }),
-      supabase
-        .from("user_preferences")
-        .select("language_mode")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-    ]);
+    const [historyResponse, userMemoryBase, prefsResponse, semanticMemoryRows] =
+      await Promise.all([
+        supabase
+          .from("messages")
+          .select("role, content")
+          .eq("conversation_id", activeConversationId)
+          .order("created_at", { ascending: false })
+          .limit(12),
+        buildUserContext(supabase, user.id).catch((err) => {
+          console.warn("[chat-api] buildUserContext failed", err);
+          return "";
+        }),
+        supabase
+          .from("user_preferences")
+          .select("language_mode")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        searchMemories(supabase, user.id, incomingMessage),
+      ]);
 
     recordProgress("Saving your message", 22);
     // Insert user message after fetching history to avoid duplicating it in the LLM context
@@ -348,9 +355,15 @@ export async function POST(request: NextRequest) {
       ? LANG_INSTRUCTION_TANGLISH
       : LANG_INSTRUCTION_ENGLISH;
 
-    let userMemory = userMemoryBase
-      ? `${userMemoryBase}\n\n${languageInstruction}`
-      : languageInstruction;
+    const semanticMemoryBlock = formatMemoriesForPrompt(semanticMemoryRows);
+    console.debug("[chat-api] semantic memory recall", {
+      hits: semanticMemoryRows.length,
+      chars: semanticMemoryBlock.length,
+    });
+
+    let userMemory = [semanticMemoryBlock, userMemoryBase, languageInstruction]
+      .filter((s) => s && s.length > 0)
+      .join("\n\n");
 
     const historyRows = historyResponse.data;
     const conversationHistory: Array<{ role: "user" | "assistant"; content: string }> = (
@@ -631,6 +644,18 @@ export async function POST(request: NextRequest) {
         .from("conversations")
         .update({ updated_at: new Date().toISOString() })
         .eq("id", conversationId);
+
+      // Extract durable user facts from this turn into the semantic memory
+      // store. Uses next/server `after()` so the work keeps running on
+      // Vercel serverless after the response is sent (Next.js 15.1+).
+      // Failures are logged inside addMemories() — never throws.
+      after(
+        addMemories(supabase, user.id, {
+          userMessage: incomingMessage,
+          assistantResponse: fullResponse,
+          conversationId,
+        })
+      );
     };
 
     const outboundStream = new ReadableStream<Uint8Array>({
