@@ -50,6 +50,34 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
   const frameBatchRef = useRef<AIProgressFrame[]>([]);
   const frameFlushTimerRef = useRef<number | null>(null);
+  const sourceQueueRef = useRef<Array<{ domain: string; title: string; timestamp?: number }>>([]);
+  const sourcePumpTimerRef = useRef<number | null>(null);
+  const pendingFinishRef = useRef(false);
+  const seenSourceDomainsRef = useRef<Set<string>>(new Set());
+
+  const stopSourcePump = useCallback(() => {
+    if (sourcePumpTimerRef.current !== null) {
+      window.clearInterval(sourcePumpTimerRef.current);
+      sourcePumpTimerRef.current = null;
+    }
+  }, []);
+
+  const pumpSourceQueue = useCallback(() => {
+    if (sourcePumpTimerRef.current !== null) return;
+    sourcePumpTimerRef.current = window.setInterval(() => {
+      const next = sourceQueueRef.current.shift();
+      if (next) {
+        trackSearchSource(next);
+      }
+      if (sourceQueueRef.current.length === 0) {
+        stopSourcePump();
+        if (pendingFinishRef.current) {
+          pendingFinishRef.current = false;
+          finishAll();
+        }
+      }
+    }, 450);
+  }, [finishAll, stopSourcePump, trackSearchSource]);
 
   const flushProgressFrames = useCallback(() => {
     if (frameFlushTimerRef.current !== null) {
@@ -65,13 +93,18 @@ export function useChat() {
 
     batch.forEach((frame) => {
       if (frame.type === 'search_source' && frame.domain && frame.title) {
-        trackSearchSource({
+        if (seenSourceDomainsRef.current.has(frame.domain)) return;
+        seenSourceDomainsRef.current.add(frame.domain);
+        sourceQueueRef.current.push({
           domain: frame.domain,
           title: frame.title,
           timestamp: frame.timestamp,
         });
       }
     });
+    if (sourceQueueRef.current.length > 0) {
+      pumpSourceQueue();
+    }
 
     if (latestPhase?.phase) {
       updatePhase(latestPhase.phase, latestPhase.label);
@@ -82,14 +115,18 @@ export function useChat() {
     }
 
     if (latestProgress?.status === 'complete') {
-      finishAll();
+      if (sourceQueueRef.current.length > 0) {
+        pendingFinishRef.current = true;
+      } else {
+        finishAll();
+      }
       return;
     }
 
     if (hasTaskComplete) {
       completeCurrentTask();
     }
-  }, [completeCurrentTask, finishAll, startStep, trackSearchSource, updatePhase, updateProgress]);
+  }, [completeCurrentTask, finishAll, pumpSourceQueue, startStep, updatePhase, updateProgress]);
 
   const enqueueProgressFrame = useCallback((frame: AIProgressFrame) => {
     frameBatchRef.current.push(frame);
@@ -102,13 +139,17 @@ export function useChat() {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      stopSourcePump();
       if (frameFlushTimerRef.current !== null) {
         window.clearTimeout(frameFlushTimerRef.current);
         frameFlushTimerRef.current = null;
       }
       frameBatchRef.current = [];
+      sourceQueueRef.current = [];
+      pendingFinishRef.current = false;
+      seenSourceDomainsRef.current = new Set();
     };
-  }, []);
+  }, [stopSourcePump]);
 
   const sendMessage = useCallback(
     async (content: string, opts?: { forceWebSearch?: boolean }) => {
@@ -159,6 +200,11 @@ export function useChat() {
       }, 120000);
 
       try {
+        sourceQueueRef.current = [];
+        pendingFinishRef.current = false;
+        seenSourceDomainsRef.current = new Set();
+        stopSourcePump();
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -446,7 +492,12 @@ export function useChat() {
         clearTimeout(timeoutId);
         setIsStreaming(false);
         flushProgressFrames();
-        finishAll();
+        if (sourceQueueRef.current.length > 0) {
+          pendingFinishRef.current = true;
+          pumpSourceQueue();
+        } else if (!pendingFinishRef.current) {
+          finishAll();
+        }
         abortRef.current = null;
       }
     },
@@ -466,6 +517,8 @@ export function useChat() {
       updatePhase,
       enqueueProgressFrame,
       flushProgressFrames,
+      pumpSourceQueue,
+      stopSourcePump,
     ],
   );
 
