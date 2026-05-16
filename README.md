@@ -197,54 +197,21 @@ The UI stays **text-first** to keep chat clean and focused.
 
 ---
 
-## Security Notes
+## Recent Changes
 
-- Supabase auth gates protected routes
-- Row-Level Security isolates user-owned data
-- Conversation and message reads are user-scoped
-- Service role key stays server-only
+### Latest Commits
 
----
-
-## Deployment Notes
-
-- Built for Vercel-compatible Next.js deployment
-- Scheduled brief processing uses `/api/daily-brief` on a cron trigger
-- Set production env vars before first run
-
----
-
-## Recent Updates
-
-- Scheduled daily brief automation
-- Real-time portfolio and watchlist streaming
-- Premium AI progress indicator
-- Cron-based email delivery
-- Phone number authentication
-- Comprehensive portfolio and settings pages
-- Indian user optimizations
-- PWA install button
-- Live global market stream
-- Robust error handling
-- Improved chat streaming
-
----
-
-## Feature Roadmap
-
-### In Progress
-- Advanced portfolio analytics
-- ML-based price prediction alerts
-- Social trading features
-- Multi-asset class support
-
-### Planned
-- Custom notification preferences
-- Advanced charting tools
-- Trading platform integrations
-- Collaborative portfolio management
-- European/US market time zone support
-- Historical performance tracking
+```
+╔════════════════════════════════════════════════════════════════╗
+║                      Last 5 Commits                           ║
+╠════════════════════════════════════════════════════════════════╣
+║ 89721b6  docs: refresh README presentation                    ║
+║ 5022c2c  Fix scheduled daily brief cron processing            ║
+║ 9bae401  Fix first chat rendering and stale cache issues      ║
+║ 581be66  fix(cron): revert to daily schedule for Vercel       ║
+║ dd64348  chore: bump version to 1.1.0                         ║
+╚════════════════════════════════════════════════════════════════╝
+```
 
 ---
 
