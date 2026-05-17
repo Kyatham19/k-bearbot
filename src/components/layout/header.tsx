@@ -1,5 +1,5 @@
 'use client';
-
+import Link from 'next/link';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Menu, LogOut, User, ArrowLeft } from 'lucide-react';
@@ -74,7 +74,7 @@ export function Header() {
   }, [router, setActiveView]);
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between border-b border-gray-200 bg-white/80 px-3 backdrop-blur dark:border-dark-800/80 dark:bg-dark-900/80">
+    <header className="flex h-12 shrink-0 items-center justify-between overflow-visible border-b border-gray-200 bg-white/80 px-3 backdrop-blur dark:border-dark-800/80 dark:bg-dark-900/80">
       {/* ── Left: sidebar toggle + back ──────── */}
       <div className="flex items-center gap-1">
         <button
@@ -134,19 +134,17 @@ export function Header() {
           </button>
 
           {menuOpen && (
-            <div 
-              className="absolute right-0 top-10 z-50 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-2xl shadow-black/10 dark:border-dark-800 dark:bg-dark-900 dark:shadow-black/40"
-              role="menu"
+            <div
+            className="fixed right-4 top-16 z-[99999] w-56 overflow-visible rounded-xl border border-dark-700 bg-dark-900 shadow-2xl"
+            role="menu"
             >
               <button
                 className="flex w-full items-center gap-2.5 px-3.5 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-850"
                 onClick={() => {
-                  setMenuOpen(false);
-                  setActiveView('settings');
-                  router.push('/');
+                  window.location.href = "/profile";
                 }}
                 role="menuitem"
-                aria-label="Open profile settings"
+                aria-label="Open profile page"
               >
                 <User size={14} />
                 <span>Profile</span>

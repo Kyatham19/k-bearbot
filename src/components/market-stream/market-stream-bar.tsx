@@ -42,15 +42,15 @@ export function MarketStreamBar() {
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className="group relative w-full overflow-hidden border-y border-white/[0.06] bg-gradient-to-b from-zinc-950 via-zinc-950/95 to-zinc-950 backdrop-blur-xl"
+      className="group relative -z-10 w-full overflow-hidden border-y border-white/[0.06] bg-gradient-to-b from-zinc-950 via-zinc-950/95 to-zinc-950 backdrop-blur-xl"
       style={{ height: 38 }}
     >
       {/* Edge fade masks */}
-      <div className="pointer-events-none absolute left-0 top-0 z-20 h-full w-16 bg-gradient-to-r from-zinc-950 to-transparent" />
-      <div className="pointer-events-none absolute right-0 top-0 z-20 h-full w-16 bg-gradient-to-l from-zinc-950 to-transparent" />
+      <div className="pointer-events-none absolute left-0 top-0 z-0 h-full w-16 bg-gradient-to-r from-zinc-950 to-transparent" />
+      <div className="pointer-events-none absolute right-0 top-0 z-0 h-full w-16 bg-gradient-to-l from-zinc-950 to-transparent" />
 
       {/* Brand badge — left fixed */}
-      <div className="absolute left-0 top-0 z-30 flex h-full items-center gap-1.5 border-r border-white/[0.06] bg-zinc-950/80 pl-3 pr-3 backdrop-blur-xl">
+      <div className="absolute left-0 top-0 z-10 flex h-full items-center gap-1.5 border-r border-white/[0.06] bg-zinc-950/80 pl-3 pr-3 backdrop-blur-xl">
         <span className="relative flex h-1.5 w-1.5">
           <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/70" />
           <span className="absolute inset-0 rounded-full bg-emerald-400" />
